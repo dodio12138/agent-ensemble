@@ -108,6 +108,22 @@ _DEFAULTS: dict[Genre, GenreDefaults] = {
         "funk", "sixteenth", "dorian_vamp", "driving", "syncopated", "syncopated"
     ),
     "ballad": GenreDefaults("ballad", "straight_eighth", "pop_1564", "sparse", "root", "sustained"),
+    # Game scores: bright loops for 8-bit and platformers, a lyrical town theme, a
+    # driving minor boss fight, a modal open world and a hushed stealth pulse.
+    "chiptune": GenreDefaults(
+        "funk", "straight_eighth", "pop_1564", "driving", "syncopated", "syncopated"
+    ),
+    "platformer": GenreDefaults(
+        "funk", "straight_eighth", "major_145", "balanced", "syncopated", "comp"
+    ),
+    "rpg": GenreDefaults("ballad", "straight_eighth", "pop_1564", "sparse", "root", "comp"),
+    "battle": GenreDefaults(
+        "funk", "straight_eighth", "minor_1645", "driving", "root", "syncopated"
+    ),
+    "exploration": GenreDefaults(
+        "ballad", "half_time", "dorian_vamp", "sparse", "root", "sustained"
+    ),
+    "stealth": GenreDefaults("ballad", "half_time", "minor_1767", "sparse", "root", "sustained"),
 }
 _ALTERNATE_GROOVES: dict[Genre, tuple[Groove, ...]] = {
     "cinematic": ("half_time", "sixteenth"),
@@ -126,6 +142,12 @@ _ALTERNATE_GROOVES: dict[Genre, tuple[Groove, ...]] = {
     "soul": ("straight_eighth", "half_time", "shuffle"),
     "swing": ("shuffle",),
     "ballad": ("half_time",),
+    "chiptune": ("sixteenth", "four_on_floor"),
+    "platformer": ("sixteenth", "shuffle"),
+    "rpg": ("shuffle", "half_time"),
+    "battle": ("sixteenth", "half_time"),
+    "exploration": ("straight_eighth",),
+    "stealth": ("straight_eighth",),
 }
 _LEGACY = {"swing", "bossa", "funk", "ballad"}
 _GENRES: dict[Genre, str] = {
@@ -150,6 +172,16 @@ _GENRES: dict[Genre, str] = {
     "bossa": r"[波巴][萨薩沙莎](?:诺瓦|諾瓦)?|\bbossa(?:[ -]nova)?\b",
     "funk": r"放克|\bfunk(?:y)?\b",
     "ballad": r"抒情|叙事曲|敘事曲|\bballad\b",
+    "chiptune": r"8[ -]?bit|8[ -]?位(?:机|機)?(?:音乐|音樂|风格|風格)?|芯片(?:音乐|音樂)|红白机|紅白機"
+    r"|\b(?:chiptunes?|chip music)\b",
+    "platformer": r"平台跳[跃躍]|横版过关|橫版過關|像素(?:游戏|遊戲)|\b(?:platformer|side[ -]scroller)\b",
+    "rpg": r"rpg|角色扮演|(?:游戏|遊戲)(?:配乐|配樂|音乐|音樂)|村庄|村莊|城镇主题|城鎮主題"
+    r"|冒险(?:游戏|遊戲)?(?:配乐|配樂|音乐|音樂)|冒險(?:遊戲)?(?:配樂|音樂)"
+    r"|\b(?:jrpg|town theme|overworld|video game music)\b",
+    "battle": r"战斗|戰鬥|boss ?(?:战|戰|曲|音乐|音樂)|史诗(?:战斗|对决)|史詩(?:戰鬥|對決)"
+    r"|\b(?:battle(?: theme| music)?|boss (?:fight|battle))\b",
+    "exploration": r"探索|地下城|迷宫|迷宮|开放世界|開放世界|\b(?:exploration|dungeon|open world)\b",
+    "stealth": r"潜行|潛行|悬疑|懸疑|潜入|潛入|\b(?:stealth|suspense)\b",
 }
 _GROOVES: dict[Groove, str] = {
     "straight_eighth": r"直[的线線拍]?[八8]分|直拍|\bstraight[ -](?:eighths?|8ths?)\b",

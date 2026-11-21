@@ -1,12 +1,13 @@
 import { createRoot } from 'react-dom/client'
 import { useEffect, useState, type CSSProperties } from 'react'
 import {
-  Activity, AudioLines, ChevronsUpDown, CircleAlert, Download, Drum, FileMusic, Guitar, KeyboardMusic, Link2,
-  ListMusic, MessagesSquare, Pause, Piano, Play, Repeat2, Square, Volume2, VolumeX, Wand2, Waves, Zap,
+  Activity, AudioLines, ChevronsUpDown, CircleAlert, Download, Drum, FileMusic, Gamepad2, Guitar, KeyboardMusic, Link2,
+  ListMusic, Megaphone, MessagesSquare, Music, Music2, Pause, Piano, Play, Repeat2, Square, Volume2, VolumeX, Wand2,
+  Waves, Zap,
   type LucideIcon,
 } from 'lucide-react'
 import {
-  GENRE_NAMES, GROOVE_NAMES, LINEUP_NAMES, METERS, SECTION_NAMES, TICKS_PER_QUARTER, TRACK_INFO,
+  GENRE_NAMES, GROOVE_NAMES, LINEUPS, LINEUP_NAMES, LINEUP_SUBTITLES, METERS, SECTION_NAMES, TICKS_PER_QUARTER, TRACK_INFO,
   activeMeter, pitchName, songPosition, trackLabel, tracksFor, type GrooveTransition, type Lineup, type SoundNote,
   type State, type TimeSignature, type TrackId,
 } from './model'
@@ -29,12 +30,22 @@ const drumNames: Record<number, string> = {
 const sounds: Record<TrackId, Record<number, string>> = {
   drums: { 0: '标准鼓组' },
   bass: { 32: '原声贝斯', 33: '电贝斯 · 指弹', 34: '电贝斯 · 拨片', 35: '无品贝斯', 38: '合成贝斯' },
-  piano: { 0: '三角钢琴', 1: '明亮钢琴', 2: '电声大钢琴', 4: '电钢琴', 11: '颤音琴', 19: '管风琴' },
+  piano: {
+    0: '三角钢琴', 1: '明亮钢琴', 2: '电声大钢琴', 4: '电钢琴', 11: '颤音琴', 19: '管风琴',
+    46: '竖琴', 8: '钢片琴', 80: '方波 8-bit',
+  },
   rhythm_guitar: { 27: '清音电吉他', 29: '过载电吉他', 30: '失真电吉他', 25: '钢弦原声吉他' },
   lead_guitar: { 30: '失真电吉他', 29: '过载电吉他', 27: '清音电吉他' },
   synth: { 89: '暖色 Pad', 48: '弦乐合奏', 21: '手风琴', 61: '铜管组' },
+  strings: { 48: '弦乐合奏', 49: '慢弦乐', 45: '拨弦', 44: '震音弦乐', 50: '合成弦乐' },
+  brass: { 60: '圆号', 61: '铜管组', 56: '小号', 57: '长号', 62: '合成铜管' },
+  melody: { 73: '长笛', 75: '排箫', 71: '单簧管', 68: '双簧管', 60: '圆号', 56: '小号', 80: '方波 8-bit', 81: '锯齿波' },
+  chip: { 80: '方波 8-bit', 81: '锯齿波', 8: '钢片琴', 9: '钟琴', 10: '八音盒', 11: '颤音琴', 46: '竖琴' },
 }
-const icons = { drums: Drum, bass: Guitar, piano: Piano, rhythm_guitar: Guitar, lead_guitar: Zap, synth: Waves }
+const icons = {
+  drums: Drum, bass: Guitar, piano: Piano, rhythm_guitar: Guitar, lead_guitar: Zap, synth: Waves,
+  strings: Music2, brass: Megaphone, melody: Music, chip: Gamepad2,
+}
 const defaultProgression = ['Dm7', 'G7', 'Cmaj7', 'Am7', 'Dm7', 'G7', 'Em7', 'A7']
 
 type DockTab = 'conductor' | 'keyboard' | 'score' | 'negotiation' | 'sync'
@@ -113,7 +124,7 @@ function LineupSwitch({ selected, pending, disabled, onChange }: {
   return (
     <div className="lineup-control">
       <div className="lineup-options" role="group" aria-label="乐队编制">
-        {(['trio', 'modern'] as const).map(lineup => (
+        {LINEUPS.map(lineup => (
           <button type="button" key={lineup} disabled={disabled} aria-pressed={lineup === selected}
             onClick={() => onChange(lineup)}>{LINEUP_NAMES[lineup]}</button>
         ))}
@@ -207,10 +218,13 @@ function PianoRoll({
     return entry
   })
   const rollColumns = bars.map(({ barTicks }) => `minmax(0, ${barTicks}fr)`).join(' ')
-  const modernInView = state?.settings.lineup === 'modern'
-    || pending.some(change => viewport.includes(change.bar) && change.settings.lineup === 'modern')
-  const lanes = tracksFor(modernInView ? 'modern' : 'trio')
-  const laneLineup = modernInView ? 'modern' : 'trio'
+  // Show the larger band whenever it plays anywhere in view, so its lanes never jump.
+  const viewLineups = [
+    state?.settings.lineup ?? 'trio',
+    ...pending.filter(change => viewport.includes(change.bar)).map(change => change.settings.lineup ?? 'trio'),
+  ]
+  const laneLineup: Lineup = viewLineups.find(item => item !== 'trio') ?? 'trio'
+  const lanes = tracksFor(laneLineup)
   const playback = state && state.transport !== 'stopped'
   return (
     <section className="panel score" aria-label="钢琴卷帘">
@@ -391,7 +405,7 @@ function App() {
             <span className="brand-mark"><AudioLines size={20} strokeWidth={2.4} /></span>
             <div>
               <h1>Agent Ensemble</h1>
-              <p>{activeLineup === 'modern' ? '现代即兴乐队 · 6 轨' : '即兴三重奏 · Drums / Bass / Piano'}</p>
+              <p>{LINEUP_SUBTITLES[activeLineup]}</p>
             </div>
           </div>
           <div className="masthead-actions">
@@ -500,7 +514,7 @@ function App() {
 
           <PianoRoll state={state} active={active} performed={performed} />
 
-          <section className="panel mixer" aria-label="乐器轨道" style={{ '--channels': lineupTracks.length } as CSSProperties}>
+          <section className={`panel mixer${lineupTracks.length > 6 ? ' dense' : ''}`} aria-label="乐器轨道" style={{ '--channels': lineupTracks.length } as CSSProperties}>
             {lineupTracks.map(track => {
               const values = currentTrackSettings?.[track]
               const live = state?.tracks[track]

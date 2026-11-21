@@ -10,6 +10,7 @@ from functools import lru_cache
 from itertools import product
 from typing import TYPE_CHECKING, Protocol
 
+from .game_music import game_parts
 from .music import (
     BAR_TICKS,
     BEATS_PER_BAR,
@@ -81,7 +82,7 @@ class BarContext:
                 bass_notes=len(notes),
                 bass_high=max((note.pitch for note in notes), default=43),
             )
-        if track == "piano" and self.settings.lineup == "modern":
+        if track == "piano" and self.settings.lineup != "trio":
             return replace(
                 self,
                 piano_onsets=tuple(sorted({note.start_tick for note in notes})),
@@ -665,7 +666,19 @@ class DrumAgent:
         meter = context.settings.meter
         genre = context.settings.genre
         figure = RHYTHM_FIGURES.get(groove) if meter == "4/4" else None
-        if genre in {"cinematic", "ambient", "classical"} and meter == "4/4":
+        if genre in {"exploration", "stealth"} and meter == "4/4":
+            cymbal = 42
+            if genre == "exploration":
+                pattern = [(0, 36, 46), (2 * PPQ, 45, 40)]
+                pattern.extend((tick, 42, 30) for tick in range(PPQ, BAR_TICKS, 2 * PPQ))
+                intent = "轻底鼓与嗵鼓标出呼吸，给旋律留出空间"
+            else:
+                pattern = [(0, 36, 52), (3 * PPQ + EIGHTH, 37, 44)]
+                pattern.extend((tick, 42, 26) for tick in range(EIGHTH, BAR_TICKS, PPQ))
+                if context.bar % 2:
+                    pattern.append((2 * PPQ + EIGHTH, 36, 40))
+                intent = "压低的底鼓和反拍踩镲，制造潜行的紧张感"
+        elif genre in {"cinematic", "ambient", "classical"} and meter == "4/4":
             cymbal = 42
             if genre == "cinematic":
                 pattern = [(0, 36, 55), (2 * PPQ, 41, 47)]
@@ -741,6 +754,30 @@ class DrumAgent:
                 ]
                 player_intent = "放轻镲片，让出旋律尾句"
         hits = {(tick, pitch): velocity for tick, pitch, velocity in pattern}
+        if genre == "battle" and meter == "4/4" and (phrase is None or phrase.activity != "busy"):
+            # Taiko-like toms under the backbeat drive a boss fight.
+            hits.setdefault((0, 41), 82)
+            hits.setdefault((2 * PPQ, 43), 76)
+            if context.bar % 4 == 3:
+                for tick, pitch in (
+                    (3 * PPQ, 45),
+                    (3 * PPQ + EIGHTH, 43),
+                    (3 * PPQ + 3 * SIXTEENTH, 41),
+                ):
+                    hits[tick, pitch] = 84
+            intent = f"{intent}，加入大鼓式嗵鼓推动战斗"
+        elif (
+            genre in {"chiptune", "platformer"}
+            and meter == "4/4"
+            and context.settings.density >= 0.6
+        ):
+            hits.update(
+                {
+                    (tick, 42): 40
+                    for tick in range(SIXTEENTH, BAR_TICKS, EIGHTH)
+                    if (tick, 42) not in hits
+                }
+            )
         modern = context.settings.lineup == "modern"
         acoustic = modern and genre not in {"cinematic", "ambient", "classical", "electronic"}
         if acoustic and (phrase is None or phrase.activity != "busy"):
@@ -787,7 +824,9 @@ class DrumAgent:
                     varied = 2 if (context.bar + tick // EIGHTH) % 2 else -8
                     hits[tick, pitch] = velocity + varied
         ordered_hits = (
-            sorted(hits.items())[: TRACK_DEFINITIONS["drums"].max_notes] if modern else hits.items()
+            sorted(hits.items())[: TRACK_DEFINITIONS["drums"].max_notes]
+            if context.settings.lineup != "trio"
+            else hits.items()
         )
         return AgentOutput(
             intent,
@@ -1433,6 +1472,272 @@ class SynthAgent:
         )
 
 
+# --- The game-score band -------------------------------------------------------------
+
+_MODE_STEPS = {
+    "major": (0, 2, 4, 5, 7, 9, 11),
+    "minor": (0, 2, 3, 5, 7, 8, 10),
+    "dorian": (0, 2, 3, 5, 7, 9, 10),
+    "mixolydian": (0, 2, 4, 5, 7, 9, 10),
+}
+# One bar of a theme in sixteenth steps: (start, length). A four-bar phrase plays
+# call, answer, call again and a cadence, so the tune comes back like a game loop.
+_THEME_CELLS: dict[str, tuple[tuple[tuple[int, int], ...], ...]] = {
+    "bouncy": (
+        ((0, 2), (2, 2), (4, 1), (6, 2), (8, 4), (12, 2), (14, 2)),
+        ((0, 1), (2, 1), (4, 2), (6, 2), (8, 2), (10, 2), (12, 4)),
+        ((0, 2), (2, 2), (4, 4), (8, 8)),
+    ),
+    "lyrical": (
+        ((0, 6), (6, 2), (8, 4), (12, 4)),
+        ((0, 4), (4, 4), (8, 6), (14, 2)),
+        ((0, 4), (4, 4), (8, 8)),
+    ),
+    "heroic": (
+        ((0, 3), (3, 1), (4, 4), (8, 3), (11, 1), (12, 4)),
+        ((0, 2), (2, 2), (4, 2), (6, 2), (8, 8)),
+        ((0, 3), (3, 1), (4, 12)),
+    ),
+    "sparse": (
+        ((0, 8), (8, 8)),
+        ((4, 12),),
+        ((0, 16),),
+    ),
+    "creeping": (
+        ((2, 1), (6, 1), (10, 2)),
+        ((0, 1), (3, 1), (8, 4)),
+        ((4, 2), (8, 8)),
+    ),
+}
+
+
+def _chord_classes(chord: Chord) -> list[int]:
+    return [(chord.root + interval) % 12 for interval in chord.intervals]
+
+
+def _scale_classes(context: BarContext) -> frozenset[int]:
+    profile = context.settings.conductor.profile
+    chord = context.chord
+    if profile is not None and profile.tonic:
+        root, steps = parse_chord(profile.tonic).root, _MODE_STEPS[profile.mode]
+    else:
+        minor = 3 in chord.intervals and 4 not in chord.intervals
+        root, steps = chord.root, _MODE_STEPS["minor" if minor else "major"]
+    # Chord tones always belong, so borrowed chords still sound in key.
+    return frozenset({(root + step) % 12 for step in steps} | set(_chord_classes(chord)))
+
+
+def _yields_to_player(context: BarContext) -> bool:
+    phrase = context.player_phrase
+    return phrase is not None and phrase.activity == "busy"
+
+
+def _voicing(chord: Chord, low: int, high: int, center: int, count: int = 3) -> list[int]:
+    classes = _chord_classes(chord)[:count]
+    return sorted({_in_register(pitch_class, low, high, center) for pitch_class in classes})
+
+
+class StringsAgent:
+    async def generate(self, context: BarContext) -> AgentOutput:
+        return self.arrange(context)
+
+    def arrange(self, context: BarContext) -> AgentOutput:
+        settings = context.settings
+        role = game_parts(settings.genre, settings.conductor.intensity).strings
+        chord = context.chord
+        bar = settings.bar_ticks
+        if role == "rest":
+            return AgentOutput("这一段不需要弦乐，留白", ())
+        if _yields_to_player(context):
+            role = "pad"
+        if role == "ostinato":
+            root = _in_register(chord.root, 48, 60, 52)
+            fifth = _in_register((chord.root + 7) % 12, 48, 64, root + 7)
+            step = SIXTEENTH if settings.density >= 0.75 else EIGHTH
+            notes = tuple(
+                _note(
+                    "strings",
+                    context,
+                    tick,
+                    step - 20,
+                    (root, root, fifth, root + 12)[(tick // step) % 4],
+                    74 if tick % settings.pulse_ticks == 0 else 60,
+                )
+                for tick in range(0, bar, step)
+            )
+            return AgentOutput("低音区断奏固定音型，推着节奏向前", notes)
+        if role == "pizzicato":
+            ticks = (0, PPQ + EIGHTH, 3 * PPQ) if bar == BAR_TICKS else (0, settings.pulse_ticks)
+            low = _voicing(chord, 48, 67, 55)
+            notes = tuple(
+                _note("strings", context, tick, EIGHTH // 2, low[index % len(low)], 62)
+                for index, tick in enumerate(ticks)
+                if tick < bar
+            )
+            return AgentOutput("拨弦轻点和弦音，留出悬疑的空隙", notes)
+        pitches = _voicing(chord, 55, 79, 67, 4)
+        if settings.conductor.intensity >= 50:
+            pitches = [_in_register(chord.root, 43, 54, 48), *pitches]
+        notes = tuple(_note("strings", context, 0, bar, pitch, 52) for pitch in pitches)
+        return AgentOutput("弦乐长音铺满和声，跟着和弦平稳换把", notes)
+
+
+class BrassAgent:
+    async def generate(self, context: BarContext) -> AgentOutput:
+        return self.arrange(context)
+
+    def arrange(self, context: BarContext) -> AgentOutput:
+        settings = context.settings
+        role = game_parts(settings.genre, settings.conductor.intensity).brass
+        chord = context.chord
+        bar = settings.bar_ticks
+        phrase_bar = context.bar % 4
+        if role == "rest" or _yields_to_player(context):
+            return AgentOutput("铜管休息，让出空间", ())
+        if role == "stabs":
+            chord_tones = _voicing(chord, 55, 76, 64)
+            ticks = [0] if settings.density < 0.5 else [0, PPQ + EIGHTH]
+            notes = [
+                _note("brass", context, tick, EIGHTH, pitch, 82 if tick == 0 else 74)
+                for tick in ticks
+                if tick < bar
+                for pitch in chord_tones
+            ]
+            if phrase_bar == 3 and bar == BAR_TICKS:
+                notes.extend(
+                    _note("brass", context, 2 * PPQ, 2 * PPQ, pitch, 70) for pitch in chord_tones
+                )
+            return AgentOutput("铜管短促和弦重音，乐句末尾拉长", tuple(notes))
+        if role == "fanfare":
+            if phrase_bar == 0:
+                pitches = _voicing(chord, 53, 72, 62)
+                notes = tuple(_note("brass", context, 0, bar, pitch, 64) for pitch in pitches)
+                return AgentOutput("圆号在乐句开头吹出号角式长和弦", notes)
+            if phrase_bar == 2 and bar == BAR_TICKS:
+                pitch = _in_register(chord.root, 50, 62, 55)
+                return AgentOutput(
+                    "圆号用低音回应", (_note("brass", context, 2 * PPQ, 2 * PPQ, pitch, 56),)
+                )
+            return AgentOutput("圆号等待下一个乐句", ())
+        if context.bar % 2:
+            return AgentOutput("铜管隔小节呼吸", ())
+        pitch = _in_register(chord.root, 45, 57, 50)
+        return AgentOutput(
+            "低音圆号长音，轻轻托住和声", (_note("brass", context, 0, bar, pitch, 46),)
+        )
+
+
+class ThemeAgent:
+    """Carry the game's tune: a short motif that returns every four bars."""
+
+    async def generate(self, context: BarContext) -> AgentOutput:
+        return self.arrange(context)
+
+    def arrange(self, context: BarContext) -> AgentOutput:
+        if _yields_to_player(context):
+            return AgentOutput("让出主旋律给现场演奏", ())
+        if context.section is not None:
+            notes = _song_motif("melody", context)
+            return AgentOutput("按曲式段落演奏主题动机", notes)
+        settings = context.settings
+        parts = game_parts(settings.genre, settings.conductor.intensity)
+        phrase_bar = context.bar % 4
+        if parts.theme == "sparse" and (context.bar // 4) % 2:
+            return AgentOutput("隔一个乐句再出现主题，留出空旷感", ())
+        cell = _THEME_CELLS[parts.theme][(0, 1, 0, 2)[phrase_bar]]
+        steps = settings.bar_ticks // SIXTEENTH
+        cell = tuple((start, min(length, steps - start)) for start, length in cell if start < steps)
+        if settings.density < 0.4 and len(cell) > 3:
+            cell = tuple(entry for entry in cell if entry[1] > 1) or cell
+        center = parts.theme_center
+        low, high = center - 12, min(center + 12, TRACK_DEFINITIONS["melody"].max_pitch)
+        scale = _scale_classes(context)
+        ladder = [pitch for pitch in range(low, high + 1) if pitch % 12 in scale]
+        chord_tones = set(_chord_classes(context.chord))
+        # The same contour every phrase is what makes the tune recognisable.
+        contour_rng = random.Random(f"{settings.seed}:theme:{settings.genre}:{phrase_bar % 2}")
+        contour = [contour_rng.choice((-2, -1, -1, 1, 1, 2, 3, -3, 0)) for _ in range(len(cell))]
+        lift = (0, 2, 1, -1)[phrase_bar] + (2 if (context.bar // 4) % 2 else 0)
+        start_target = _in_register(context.chord.root, low, high, center)
+        index = min(range(len(ladder)), key=lambda i: abs(ladder[i] - start_target)) + lift
+        notes = []
+        phrase = context.player_phrase
+        for position, (start, length) in enumerate(cell):
+            index = max(0, min(len(ladder) - 1, index + (contour[position] if position else 0)))
+            pitch = ladder[index]
+            strong = start % 8 == 0 or length >= 4
+            last = position == len(cell) - 1
+            if phrase_bar == 3 and last:
+                pitch = _in_register(context.chord.root, low, high, pitch)
+            elif strong and pitch % 12 not in chord_tones:
+                pitch = min(
+                    (p for p in ladder if p % 12 in chord_tones),
+                    key=lambda p: (abs(p - pitch), p),
+                    default=pitch,
+                )
+            index = min(range(len(ladder)), key=lambda i: abs(ladder[i] - pitch))
+            velocity = (84 if position == 0 else 74) - (12 if phrase else 0)
+            tick, duration = start * SIXTEENTH, length * SIXTEENTH - 15
+            notes.append(_note("melody", context, tick, duration, pitch, velocity))
+        intent = (
+            "主题收束到主音"
+            if phrase_bar == 3
+            else "主题动机" + ("回应句" if phrase_bar == 1 else "")
+        )
+        return AgentOutput(intent, tuple(notes))
+
+
+class ChipAgent:
+    async def generate(self, context: BarContext) -> AgentOutput:
+        return self.arrange(context)
+
+    def arrange(self, context: BarContext) -> AgentOutput:
+        settings = context.settings
+        role = game_parts(settings.genre, settings.conductor.intensity).chip
+        chord = context.chord
+        bar = settings.bar_ticks
+        if role == "rest":
+            return AgentOutput("芯片声部休息", ())
+        if role == "arp":
+            base = _in_register(chord.root, 60, 71, 64)
+            tones = sorted(
+                {
+                    base + (interval if interval < 12 else interval - 12)
+                    for interval in chord.intervals[:4]
+                }
+            )
+            ladder = [*tones, *(pitch + 12 for pitch in tones)]
+            shape = [*range(len(ladder)), *range(len(ladder) - 2, 0, -1)]
+            busy = _yields_to_player(context)
+            step = SIXTEENTH if settings.density >= 0.6 and not busy else EIGHTH
+            notes = tuple(
+                _note(
+                    "chip",
+                    context,
+                    tick,
+                    step - 10,
+                    ladder[shape[(tick // step) % len(shape)]],
+                    66 if tick % settings.pulse_ticks == 0 else 56,
+                )
+                for tick in range(0, bar, step)
+            )
+            return AgentOutput("方波快速琶音，经典八位机的和声", notes)
+        rng = context.random_for("chip")
+        high = [pitch + 12 for pitch in _voicing(chord, 72, 84, 78, 4)]
+        candidates = [
+            tick for tick in (EIGHTH, PPQ + EIGHTH, 2 * PPQ + EIGHTH, 3 * PPQ) if tick < bar
+        ]
+        chosen = [tick for tick in candidates if rng.random() < 0.25 + settings.density / 2][:3]
+        ends = [*chosen[1:], bar]
+        notes = tuple(
+            _note(
+                "chip", context, tick, min(PPQ, end - tick - 10), high[rng.randrange(len(high))], 50
+            )
+            for tick, end in zip(chosen, ends, strict=True)
+        )
+        return AgentOutput("高音区零星的钟琴点缀", notes)
+
+
 RULE_AGENTS = {
     "drums": DrumAgent(),
     "bass": BassAgent(),
@@ -1440,6 +1745,10 @@ RULE_AGENTS = {
     "rhythm_guitar": RhythmGuitarAgent(),
     "lead_guitar": LeadGuitarAgent(),
     "synth": SynthAgent(),
+    "strings": StringsAgent(),
+    "brass": BrassAgent(),
+    "melody": ThemeAgent(),
+    "chip": ChipAgent(),
 }
 
 

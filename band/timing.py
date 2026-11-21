@@ -51,14 +51,27 @@ if TYPE_CHECKING:
 NANOSECONDS_PER_MINUTE = 60_000_000_000
 LOOKAHEAD_BARS = 2
 Event = dict[str, Any]
-MODERN_PROGRAMS = {"bass": 33, "piano": 4}
-ADDED_TRACK_VOLUMES = {"rhythm_guitar": 0.65, "lead_guitar": 0.66, "synth": 0.45}
+LINEUP_PROGRAMS: dict[Lineup, dict[TrackId, int]] = {
+    "modern": {"bass": 33, "piano": 4},
+    "game": {"piano": 46},  # harp under the theme
+}
+# Tracks whose default sound depends on the lineup.
+LINEUP_PROGRAM_TRACKS = frozenset(
+    track for programs in LINEUP_PROGRAMS.values() for track in programs
+)
+ADDED_TRACK_VOLUMES = {
+    "rhythm_guitar": 0.65,
+    "lead_guitar": 0.66,
+    "synth": 0.45,
+    "strings": 0.55,
+    "brass": 0.5,
+    "melody": 0.7,
+    "chip": 0.38,
+}
 
 
 def _default_program(track_id: TrackId, lineup: Lineup) -> int:
-    if lineup == "modern" and track_id in MODERN_PROGRAMS:
-        return MODERN_PROGRAMS[track_id]
-    return TRACK_DEFINITIONS[track_id].program
+    return LINEUP_PROGRAMS.get(lineup, {}).get(track_id, TRACK_DEFINITIONS[track_id].program)
 
 
 @dataclass(frozen=True)
@@ -712,7 +725,7 @@ class Scheduler:
             if track_id is None:
                 settings = MusicSettings.model_validate({**settings.model_dump(), **patch})
                 if settings.lineup != desired.settings.lineup:
-                    for key in MODERN_PROGRAMS.keys() - program_overrides:
+                    for key in LINEUP_PROGRAM_TRACKS - program_overrides:
                         tracks[key] = tracks[key].model_copy(
                             update={"program": _default_program(key, settings.lineup)}
                         )

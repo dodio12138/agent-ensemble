@@ -1,9 +1,9 @@
 import { useRef, useState } from 'react'
 import { FileMusic, Send } from 'lucide-react'
 import {
-  CORE_TRACK_IDS, GENRE_NAMES, GROOVE_NAMES, SECTION_NAMES, TRACK_INFO,
+  CORE_TRACK_IDS, GENRE_NAMES, GROOVE_NAMES, SECTION_NAMES, TRACK_INFO, soloistFor,
   type ConductorPlan, type Genre, type HarmonicMove, type ImprovisedChorus, type ImprovisationPhrase,
-  type JamPatch, type MusicProfile, type Song, type State,
+  type JamPatch, type Lineup, type MusicProfile, type Song, type State,
 } from './model'
 
 // Every style the band can play, grouped by family. Each applies at once with local rules.
@@ -13,6 +13,7 @@ const STYLE_GROUPS: { label: string; styles: Genre[] }[] = [
   { label: '摇滚 · 布鲁斯', styles: ['rock', 'hard_rock', 'alternative_rock', 'blues', 'country'] },
   { label: '流行 · 抒情', styles: ['pop', 'ballad'] },
   { label: '配乐 · 电子', styles: ['cinematic', 'ambient', 'electronic', 'classical'] },
+  { label: '游戏配乐', styles: ['chiptune', 'platformer', 'rpg', 'battle', 'exploration', 'stealth'] },
 ]
 
 function genreOf(plan?: ConductorPlan | null): Genre | null {
@@ -123,7 +124,7 @@ function ChorusPreview({ chorus, currentBar, transport, lineup }: {
   chorus: ImprovisedChorus
   currentBar?: number
   transport?: State['transport']
-  lineup?: string
+  lineup?: Lineup
 }) {
   const { plan, start_bar: start, end_bar: end } = chorus
   const length = plan.progression.length
@@ -178,8 +179,8 @@ function ChorusPreview({ chorus, currentBar, transport, lineup }: {
             <li key={index} className={current ? 'current' : undefined} aria-current={current ? 'step' : undefined}>
               <span>{phraseEnd === phraseBar + 1 ? phraseEnd : `${phraseBar + 1}–${phraseEnd}`}</span>
               {(() => {
-                // In the modern band the lead guitar takes the melodic solos.
-                const soloist = phrase.lead === 'piano' && lineup === 'modern' ? 'lead_guitar' : phrase.lead
+                // In the full bands the lead voice takes the melodic solos.
+                const soloist = soloistFor(phrase.lead, lineup)
                 return <strong style={{ color: TRACK_INFO[soloist].color }}>{TRACK_INFO[soloist].name}领奏</strong>
               })()}
               <span>{characters[phrase.character]}</span>

@@ -14,8 +14,10 @@ BAR_TICKS = PPQ * BEATS_PER_BAR
 CHORUS_BARS = 8
 PLAYER_CHANNEL = 2
 TrioTrackId = Literal["drums", "bass", "piano"]
-TrackId = Literal[TrioTrackId, "rhythm_guitar", "lead_guitar", "synth"]
-Lineup = Literal["trio", "modern"]
+TrackId = Literal[
+    TrioTrackId, "rhythm_guitar", "lead_guitar", "synth", "strings", "brass", "melody", "chip"
+]
+Lineup = Literal["trio", "modern", "game"]
 TimeSignature = Literal["4/4", "3/4", "6/8"]
 TIME_SIGNATURES: dict[TimeSignature, tuple[int, int]] = {
     "4/4": (4, 4),
@@ -43,6 +45,12 @@ Genre = Literal[
     "country",
     "hip_hop",
     "classical",
+    "chiptune",
+    "platformer",
+    "rpg",
+    "battle",
+    "exploration",
+    "stealth",
 ]
 Groove = Literal[
     "swing",
@@ -107,12 +115,22 @@ TRACK_DEFINITIONS: MappingProxyType[TrackId, Track] = MappingProxyType(
         "rhythm_guitar": Track("Rhythm Guitar", 3, 27, 48, 76, 24),
         "lead_guitar": Track("Lead Guitar", 4, 30, 55, 88, 12),
         "synth": Track("Synth Pad", 5, 89, 55, 88, 16),
+        # The game-score band: orchestral layers plus a chip arpeggio voice.
+        "strings": Track("Strings", 6, 48, 43, 84, 24),
+        "brass": Track("Brass", 7, 60, 45, 79, 12),
+        "melody": Track("Theme", 8, 73, 60, 96, 16),
+        "chip": Track("Chip Arp", 10, 80, 48, 96, 32),
     }
 )
+LINEUP_TRACKS: dict[Lineup, tuple[TrackId, ...]] = {
+    "trio": ("drums", "bass", "piano"),
+    "modern": ("drums", "bass", "piano", "rhythm_guitar", "lead_guitar", "synth"),
+    "game": ("drums", "bass", "piano", "strings", "brass", "melody", "chip"),
+}
 
 
 def active_tracks(lineup: Lineup) -> tuple[TrackId, ...]:
-    return tuple(TRACK_DEFINITIONS if lineup == "modern" else TRACKS)
+    return LINEUP_TRACKS[lineup]
 
 
 DEFAULT_PROGRESSION = ("Dm7", "G7", "Cmaj7", "Am7", "Dm7", "G7", "Em7", "A7")
@@ -341,11 +359,18 @@ class SongPlan(FrozenModel):
 
 
 def section_volume(section: SongSection, track: TrackId, volume: float) -> float:
-    if section.texture == "sparse" and track in {"drums", "rhythm_guitar", "synth"}:
+    if section.texture == "sparse" and track in {"drums", "rhythm_guitar", "synth", "chip"}:
         return volume * 0.72
-    if section.mix == "lead" and track in {"drums", "bass", "rhythm_guitar", "synth"}:
+    if section.mix == "lead" and track in {
+        "drums",
+        "bass",
+        "rhythm_guitar",
+        "synth",
+        "strings",
+        "brass",
+    }:
         return volume * 0.83
-    if section.mix == "rhythm" and track in {"piano", "lead_guitar", "synth"}:
+    if section.mix == "rhythm" and track in {"piano", "lead_guitar", "synth", "melody"}:
         return volume * 0.83
     return volume
 

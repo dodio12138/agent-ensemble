@@ -75,7 +75,7 @@ def export_midi(
                 MetaMessage(
                     "track_name",
                     name="Keys"
-                    if track_id == "piano" and settings.lineup == "modern"
+                    if track_id == "piano" and settings.lineup != "trio"
                     else definition.title,
                 ),
                 Message("program_change", channel=channel, program=program),

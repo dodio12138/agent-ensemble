@@ -158,6 +158,7 @@ _REGISTER = {
     "piano": (64, 84, 72),
     "lead_guitar": (57, 81, 67),
     "synth": (62, 84, 72),
+    "melody": (64, 88, 76),
     "bass": (40, 55, 47),
 }
 _TOM_FILL = ((12, 50, 84), (13, 48, 82), (14, 47, 86), (15, 45, 90))
@@ -263,9 +264,10 @@ def apply_improvised_fill(
     ):
         return plan
     half = plan.bar % 2 if half is None else half % 2
-    # In the modern band the lead guitar takes melodic solos; keys keep comping.
+    # In the full bands the lead voice takes melodic solos; keys keep comping.
+    soloists: dict[str, TrackId] = {"modern": "lead_guitar", "game": "melody"}
     track: TrackId = (
-        "lead_guitar" if phrase.lead == "piano" and settings.lineup == "modern" else phrase.lead
+        soloists.get(settings.lineup, "piano") if phrase.lead == "piano" else phrase.lead
     )
     return apply_solo(plan, settings, track, phrase.character, half)
 

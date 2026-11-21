@@ -14,6 +14,7 @@ from typing import Literal, get_args
 
 from pydantic import Field
 
+from band.game_music import game_tones
 from band.harmony import materialize_harmony
 from band.music import (
     ConductorPlan,
@@ -70,6 +71,12 @@ TEMPO: dict[Genre, tuple[int, int]] = {
     "country": (90, 140),
     "hip_hop": (80, 100),
     "classical": (60, 120),
+    "chiptune": (130, 170),
+    "platformer": (120, 160),
+    "rpg": (80, 120),
+    "battle": (140, 180),
+    "exploration": (60, 90),
+    "stealth": (70, 100),
 }
 # Per-style guardrails: (intensity, density) ranges and the guitar sounds that fit.
 _ROCK = ((70, 95), (0.6, 0.9), ("overdriven", "distorted"), ("distorted", "overdriven"))
@@ -108,6 +115,12 @@ GUIDES: dict[
     "ambient": _SOFT,
     "cinematic": ((25, 70), (0.2, 0.6), ("clean", "acoustic"), ("clean",)),
     "classical": _SOFT,
+    "chiptune": ((60, 90), (0.55, 0.85), ("clean",), ("clean",)),
+    "platformer": ((55, 85), (0.5, 0.8), ("clean",), ("clean",)),
+    "rpg": ((35, 65), (0.35, 0.65), ("acoustic", "clean"), ("clean",)),
+    "battle": ((75, 98), (0.65, 0.95), ("distorted", "overdriven"), ("distorted",)),
+    "exploration": _SOFT,
+    "stealth": ((25, 55), (0.25, 0.55), ("clean",), ("clean",)),
 }
 RHYTHM_TONES = {"clean": 27, "overdriven": 29, "distorted": 30, "acoustic": 25}
 LEAD_TONES = {"distorted": 30, "overdriven": 29, "clean": 27}
@@ -250,13 +263,16 @@ def materialize(
         "lead_guitar": {"program": LEAD_TONES[lead]},
         "synth": {"program": PAD_TONES[choice.pad]},
     }
+    if settings.lineup == "game":
+        # The game band has no guitars; its sounds come from the style's game recipe.
+        tracks = game_tones(genre)
     note = choice.note.strip()[:40]
     if sum("\u4e00" <= char <= "\u9fff" for char in note) < 4:
         # The model's reason was not a real sentence; describe what was actually chosen.
         note = "，".join(
             (
                 GROOVE_LABELS.get(plan.profile.groove if plan.profile else "", "按风格律动"),
-                f"{TONE_LABELS[rhythm]}节奏吉他",
+                "游戏配乐编制" if settings.lineup == "game" else f"{TONE_LABELS[rhythm]}节奏吉他",
                 f"强度 {intensity}%",
             )
         )

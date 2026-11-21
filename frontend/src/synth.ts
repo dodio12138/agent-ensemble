@@ -31,10 +31,67 @@ const modernTone = {
       { ratio: 1.0028, gain: 0.25, wave: 'triangle' },
     ],
   },
+  // Game-score voices, chosen by General MIDI program.
+  square: {
+    pan: 0.1, cutoff: 5200, highpass: 120, attack: 0.003, decay: 0.08, sustain: 0.78, level: 0.075,
+    partials: [{ ratio: 1, gain: 0.8, wave: 'square' }],
+  },
+  saw: {
+    pan: -0.1, cutoff: 3600, highpass: 120, attack: 0.004, decay: 0.12, sustain: 0.7, level: 0.075,
+    partials: [{ ratio: 1, gain: 0.8, wave: 'sawtooth' }],
+  },
+  brass: {
+    pan: 0.18, cutoff: 1650, highpass: 90, attack: 0.045, decay: 0.28, sustain: 0.72, level: 0.13,
+    partials: [
+      { ratio: 1, gain: 0.55, wave: 'sawtooth' }, { ratio: 1.004, gain: 0.25, wave: 'sawtooth' },
+      { ratio: 2, gain: 0.12, wave: 'triangle' },
+    ],
+  },
+  flute: {
+    pan: -0.12, cutoff: 3900, highpass: 220, attack: 0.06, decay: 0.2, sustain: 0.8, level: 0.2,
+    partials: [
+      { ratio: 1, gain: 0.82, wave: 'sine' }, { ratio: 2, gain: 0.16, wave: 'triangle' },
+      { ratio: 3, gain: 0.05, wave: 'sine' },
+    ],
+  },
+  pluck: {
+    pan: -0.22, cutoff: 3200, highpass: 90, attack: 0.003, decay: 0.55, sustain: 0.04, level: 0.24,
+    partials: [
+      { ratio: 1, gain: 0.7, wave: 'triangle' }, { ratio: 2, gain: 0.22, wave: 'sine' },
+      { ratio: 3, gain: 0.08, wave: 'sine' },
+    ],
+  },
+  bell: {
+    pan: 0.26, cutoff: 6200, highpass: 300, attack: 0.002, decay: 0.9, sustain: 0.03, level: 0.15,
+    partials: [
+      { ratio: 1, gain: 0.66, wave: 'sine' }, { ratio: 2.76, gain: 0.2, wave: 'sine' },
+      { ratio: 5.4, gain: 0.08, wave: 'sine' },
+    ],
+  },
 } as const satisfies Record<string, {
   pan: number; cutoff: number; highpass: number; attack: number; decay: number; sustain: number; level: number
   partials: ReadonlyArray<{ ratio: number; gain: number; wave: OscillatorType }>
 }>
+
+type ToneName = keyof typeof modernTone
+const GAME_TRACKS: Partial<Record<VoiceTrack, ToneName>> = {
+  strings: 'strings', brass: 'brass', melody: 'flute', chip: 'bell',
+}
+
+/** Pick an oscillator voice for a program; null keeps the original piano and bass synths. */
+function toneFor(track: VoiceTrack, program?: number): ToneName | null {
+  if (track === 'rhythm_guitar' || track === 'lead_guitar') return track
+  if (track === 'synth') return program === 48 ? 'strings' : 'synth'
+  if (track === 'drums' || track === 'bass' || track === 'player' || program === undefined) return GAME_TRACKS[track] ?? null
+  if (program === 80) return 'square'
+  if (program === 81) return 'saw'
+  if (program === 45 || program === 46 || program === 24 || program === 25) return 'pluck'
+  if (program >= 40 && program <= 51) return 'strings'
+  if (program >= 56 && program <= 63) return 'brass'
+  if (program >= 64 && program <= 79) return 'flute'
+  if (program >= 8 && program <= 14 && track !== 'piano') return 'bell'
+  return GAME_TRACKS[track] ?? null
+}
 
 interface Voice {
   track: VoiceTrack
@@ -120,13 +177,13 @@ export class StudioSynth {
     output.connect(bus)
     const voice: Voice = { track, output, sources: [] }
     this.voices.set(event.event_id, voice)
+    let tone: ToneName | null = null
     if (track === 'drums') {
       this.drum(
         context, event.pitch, volume, voice, event.event_id,
         event.velocity ?? 85, event.volume ?? 0.8,
       )
-    } else if (track === 'rhythm_guitar' || track === 'lead_guitar' || track === 'synth') {
-      const tone = track === 'synth' && event.program === 48 ? 'strings' : track
+    } else if (track !== 'player' && (tone = toneFor(track, event.program))) {
       this.modernInstrument(context, event.pitch, volume, voice, tone, event.articulation)
     } else {
       this.instrument(context, event.pitch, volume, voice, event.program ?? 0)
@@ -254,7 +311,7 @@ export class StudioSynth {
       oscillator.connect(partialGain).connect(highpass)
       oscillator.start(now)
       voice.sources.push(oscillator)
-      if (track === 'strings') {
+      if (track === 'strings' || track === 'flute') {
         const vibrato = context.createOscillator()
         const depth = context.createGain()
         vibrato.frequency.value = 4.7 + index * 0.4

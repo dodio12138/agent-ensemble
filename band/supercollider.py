@@ -24,7 +24,18 @@ SETUP_TIMEOUT = 0.70
 RETRY_INTERVAL = 0.35
 RESTART_DELAY = 2.0
 
-BAND_LANES = ("drums", "bass", "piano", "rhythm_guitar", "lead_guitar", "synth")
+BAND_LANES = (
+    "drums",
+    "bass",
+    "piano",
+    "rhythm_guitar",
+    "lead_guitar",
+    "synth",
+    "strings",
+    "brass",
+    "melody",
+    "chip",
+)
 LANES = (*BAND_LANES, "player")
 SYNTHS = (
     "ae_kick",
@@ -45,6 +56,11 @@ EXTRA_VOICES = {
     "rhythm_guitar": "ae_clean_guitar",
     "lead_guitar": "ae_lead_guitar",
     "synth": "ae_pad",
+    # The game band reuses the closest voices the local synth definitions offer.
+    "strings": "ae_pad",
+    "brass": "ae_lead_guitar",
+    "melody": "ae_vibes",
+    "chip": "ae_vibes",
 }
 GUITAR_ARTICULATIONS = {"palm_mute": 1, "legato": 2, "harmonic": 3}
 KICKS = {35, 36}

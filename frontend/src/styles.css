@@ -830,6 +830,10 @@ button.audio-toggle:hover { background: #2a2b2e; }
 }
 .program select:not(:disabled) { cursor: pointer; }
 .program svg { position: absolute; pointer-events: none; right: 5px; top: 6px; color: var(--muted); }
+/* Seven channels: drop the instrument icon so every name stays readable. */
+.mixer.dense .channel { padding: 9px 8px; }
+.mixer.dense .channel-title { grid-template-columns: minmax(0, 1fr) 26px; gap: 5px; }
+.mixer.dense .channel-icon { display: none; }
 .channel-footer { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 6px; }
 .channel-footer span { min-width: 0; font-size: 10px; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .channel-footer span i { width: 5px; height: 5px; background: var(--accent); }

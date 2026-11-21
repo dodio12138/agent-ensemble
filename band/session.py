@@ -14,6 +14,7 @@ from uuid import uuid4
 
 from band.audio_routing import AudioRouter, AudioSource, SuperColliderSink
 from band.conductor import Conductor, genre_preset
+from band.game_music import game_tones
 from band.improv_arrangement import apply_improvised_fill, apply_solo
 from band.jam import JamDirector
 from band.link import LinkBridge
@@ -428,10 +429,18 @@ class Session:
         async with self.commands:
             current, _ = self.scheduler.desired_configuration()
             plan, progression = genre_preset(style, current.conductor)
-            # The style's usual guitar sounds come with it, e.g. driven guitars for rock.
-            _, _, rhythm_tones, lead_tones = GUIDES[style]
-            self.scheduler.stage_track("rhythm_guitar", {"program": RHYTHM_TONES[rhythm_tones[0]]})
-            self.scheduler.stage_track("lead_guitar", {"program": LEAD_TONES[lead_tones[0]]})
+            if current.lineup == "game":
+                # Game styles bring their sound: square waves for 8-bit, flute and harp
+                # for an RPG town, and they drop the layers the scene does not use.
+                for track, patch in game_tones(style).items():
+                    self.scheduler.stage_track(track, patch)
+            else:
+                # The style's usual guitar sounds come with it, e.g. driven guitars for rock.
+                _, _, rhythm_tones, lead_tones = GUIDES[style]
+                self.scheduler.stage_track(
+                    "rhythm_guitar", {"program": RHYTHM_TONES[rhythm_tones[0]]}
+                )
+                self.scheduler.stage_track("lead_guitar", {"program": LEAD_TONES[lead_tones[0]]})
             state = await self._apply_conductor(
                 plan,
                 {

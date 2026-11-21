@@ -21,16 +21,35 @@ export function activeMeter(state?: State | null): TimeSignature {
 }
 export const CORE_TRACK_IDS = ['drums', 'bass', 'piano'] as const
 const MODERN_TRACK_IDS = ['rhythm_guitar', 'lead_guitar', 'synth'] as const
-export const TRACK_IDS = [...CORE_TRACK_IDS, ...MODERN_TRACK_IDS] as const
+const GAME_TRACK_IDS = ['strings', 'brass', 'melody', 'chip'] as const
+export const TRACK_IDS = [...CORE_TRACK_IDS, ...MODERN_TRACK_IDS, ...GAME_TRACK_IDS] as const
 type CoreTrackId = typeof CORE_TRACK_IDS[number]
-type ModernTrackId = typeof MODERN_TRACK_IDS[number]
+type AddedTrackId = typeof MODERN_TRACK_IDS[number] | typeof GAME_TRACK_IDS[number]
 export type TrackId = typeof TRACK_IDS[number]
-export type Lineup = 'trio' | 'modern'
+export type Lineup = 'trio' | 'modern' | 'game'
 
-export const LINEUP_NAMES = { trio: '三重奏', modern: '现代乐队' } as const
+export const LINEUPS = ['trio', 'modern', 'game'] as const
+export const LINEUP_NAMES = { trio: '三重奏', modern: '现代乐队', game: '游戏配乐' } as const
+export const LINEUP_SUBTITLES = {
+  trio: '即兴三重奏 · Drums / Bass / Piano',
+  modern: '现代即兴乐队 · 6 轨',
+  game: '游戏配乐编制 · 7 轨',
+} as const
+
+const LINEUP_TRACKS: Record<Lineup, readonly TrackId[]> = {
+  trio: CORE_TRACK_IDS,
+  modern: [...CORE_TRACK_IDS, ...MODERN_TRACK_IDS],
+  game: [...CORE_TRACK_IDS, ...GAME_TRACK_IDS],
+}
 
 export function tracksFor(lineup?: Lineup): readonly TrackId[] {
-  return lineup === 'modern' ? TRACK_IDS : CORE_TRACK_IDS
+  return LINEUP_TRACKS[lineup ?? 'trio']
+}
+
+/** The voice that takes melodic solos when the conductor hands the lead to the keys. */
+export function soloistFor(lead: TrackId, lineup?: Lineup): TrackId {
+  if (lead !== 'piano') return lead
+  return lineup === 'modern' ? 'lead_guitar' : lineup === 'game' ? 'melody' : 'piano'
 }
 
 const pitchNames = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B']
@@ -46,11 +65,15 @@ export const TRACK_INFO = {
   rhythm_guitar: { name: '节奏吉他', en: 'RHYTHM GTR', color: '#ebcd80', range: [48, 76], program: 27 },
   lead_guitar: { name: '主奏吉他', en: 'LEAD GTR', color: '#e3a6bb', range: [55, 88], program: 30 },
   synth: { name: '合成器', en: 'SYNTH', color: '#94ccea', range: [55, 88], program: 89 },
+  strings: { name: '弦乐', en: 'STRINGS', color: '#d9a3e6', range: [43, 84], program: 48 },
+  brass: { name: '铜管', en: 'BRASS', color: '#e6c06e', range: [45, 79], program: 60 },
+  melody: { name: '主旋律', en: 'THEME', color: '#8fd3c4', range: [60, 96], program: 73 },
+  chip: { name: '芯片琶音', en: 'CHIP ARP', color: '#9fb6f0', range: [48, 96], program: 80 },
 } as const
 
 export function trackLabel(track: TrackId, lineup?: Lineup) {
   const { name, en } = TRACK_INFO[track]
-  return track === 'piano' && lineup === 'modern' ? { name: '键盘', en: 'KEYS' } : { name, en }
+  return track === 'piano' && lineup && lineup !== 'trio' ? { name: '键盘', en: 'KEYS' } : { name, en }
 }
 
 export const STYLE_NAMES = {
@@ -78,6 +101,12 @@ export const GENRE_NAMES = {
   country: '乡村',
   hip_hop: '嘻哈',
   classical: '古典',
+  chiptune: '8-bit 芯片',
+  platformer: '像素平台跳跃',
+  rpg: 'RPG 冒险 · 村庄',
+  battle: '史诗战斗 · Boss',
+  exploration: '探索氛围',
+  stealth: '悬疑潜行',
 } as const
 
 export const GROOVE_NAMES = {
@@ -269,7 +298,7 @@ export interface TrackSettings {
   program: number
 }
 
-type TrackSettingsMap = Record<CoreTrackId, TrackSettings> & Partial<Record<ModernTrackId, TrackSettings>>
+type TrackSettingsMap = Record<CoreTrackId, TrackSettings> & Partial<Record<AddedTrackId, TrackSettings>>
 
 export interface PlayerPhrase {
   register: 'low' | 'middle' | 'high'
