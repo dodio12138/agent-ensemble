@@ -65,7 +65,7 @@ def test_rock_lead_licks_follow_the_key_of_the_chords_played():
     for progression, tonic in ((MINOR_ROCK, 9), (("E", "D", "A", "E") * 2, 4)):
         lick = part(plan(rock(progression=progression), 3), "lead_guitar")
         pentatonic = {(tonic + step) % 12 for step in (0, 3, 5, 7, 10)}
-        assert len(lick) >= 5 and {note.pitch % 12 for note in lick} <= pentatonic
+        assert len(lick) >= 4 and {note.pitch % 12 for note in lick} <= pentatonic
     assert not part(plan(rock(), 1), "lead_guitar")
 
 

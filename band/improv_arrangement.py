@@ -156,7 +156,7 @@ _ORDER = {"R": 0, "b3": 1.5, "3": 2, "5": 3, "7": 4, "9": 5, "R+": 6}
 # Melodic register and centre for whoever plays the line.
 _REGISTER = {
     "piano": (64, 84, 72),
-    "lead_guitar": (62, 86, 72),
+    "lead_guitar": (57, 81, 67),
     "synth": (62, 84, 72),
     "bass": (40, 55, 47),
 }

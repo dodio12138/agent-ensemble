@@ -1251,48 +1251,47 @@ class RhythmGuitarAgent:
 
 _PENTATONIC = (0, 3, 5, 7, 10)
 # Rock licks as steps along the minor pentatonic, from where the lick starts.
+# Rock licks: (pentatonic step from home, start sixteenth, length in sixteenths).
+# A few connected eighths lead into one held note that rings to the end of the bar.
 _ROCK_LICKS = (
-    (4, 3, 2, 1, 0, 0),
-    (0, 1, 2, 1, 0, -1),
-    (2, 3, 4, 5, 4, 2),
-    (-1, 0, 1, 2, 3, 2),
+    ((0, 4, 2), (1, 6, 2), (2, 8, 2), (1, 10, 6)),
+    ((2, 4, 2), (1, 6, 2), (0, 8, 4), (-1, 12, 4)),
+    ((0, 6, 1), (1, 7, 1), (2, 8, 2), (3, 10, 6)),
+    ((-1, 4, 3), (0, 7, 1), (2, 8, 2), (1, 10, 6)),
 )
 
 
 def _rock_lick(context: BarContext) -> tuple[str, tuple[Note, ...]] | None:
-    """A pentatonic fill over the last two beats of each four-bar phrase."""
+    """A pentatonic phrase over the second half of each four-bar phrase's last bar."""
     if context.bar % 4 != 3 or context.settings.density < 0.35:
         return None
     # The key comes from the chords being played, which may differ from the style default.
     tonic = parse_chord(context.settings.progression[0]).root
     rng = context.random_for("lead_guitar")
     shape = _ROCK_LICKS[rng.randrange(len(_ROCK_LICKS))]
-    scale = [pitch for pitch in range(60, 89) if (pitch - tonic) % 12 in _PENTATONIC]
-    home = min(range(len(scale)), key=lambda index: abs(scale[index] - 72))
+    # The guitar's singing range; a distorted sample turns thin and piercing above it.
+    scale = [pitch for pitch in range(55, 82) if (pitch - tonic) % 12 in _PENTATONIC]
+    home = min(range(len(scale)), key=lambda index: abs(scale[index] - 67))
     climax = context.bar % CHORUS_BARS == CHORUS_BARS - 1
     notes = []
-    for index, step in enumerate(shape):
+    for index, (step, start, length) in enumerate(shape):
         position = max(0, min(len(scale) - 1, home + step + (2 if climax else 0)))
+        tick = start * SIXTEENTH
         last = index == len(shape) - 1
-        # Five sixteenths from beat three, then a held note on the and-of-four.
-        tick = 2 * PPQ + (index + (1 if last else 0)) * SIXTEENTH
-        duration = (BAR_TICKS - tick - 20) if last else SIXTEENTH - 10
+        # Notes touch the next one so the line sings instead of plucking each note.
+        end = BAR_TICKS - 20 if last else (start + length) * SIXTEENTH
         notes.append(
             _note(
                 "lead_guitar",
                 context,
                 tick,
-                duration,
+                end - tick,
                 scale[position],
-                (84 if last else 74) + (6 if climax else 0),
-                articulation="harmonic"
-                if last and climax
-                else "legato"
-                if 0 < index and not last
-                else "normal",
+                (86 if last else 78) + (6 if climax else 0),
+                articulation="legato" if 0 < index else "normal",
             )
         )
-    return "句尾用小调五声音阶加花，长音收在下一句前", tuple(notes)
+    return "句尾用小调五声音阶连成一句，最后一个音拉长", tuple(notes)
 
 
 class LeadGuitarAgent:
@@ -1356,7 +1355,8 @@ class LeadGuitarAgent:
                 return AgentOutput("句尾空间不足，等下一句进入", ())
 
         chord = context.chord
-        anchor = 68 if phrase and phrase.pitch_register == "high" else 76
+        # Stay in the guitar's singing range rather than its thin top end.
+        anchor = 64 if phrase and phrase.pitch_register == "high" else 69
         entry = _in_register(chord.root + chord.intervals[2], 58, 86, anchor)
         next_chord = context.next_chord
         if next_chord is None and (
@@ -1367,16 +1367,15 @@ class LeadGuitarAgent:
         destination = _in_register(target, 58, 88, entry)
         other_tones = {(chord.root + degree) % 12 for degree in chord.intervals}
         answer = min(
-            (pitch for pitch in range(58, 89) if pitch != entry and pitch % 12 in other_tones),
+            (pitch for pitch in range(58, 82) if pitch != entry and pitch % 12 in other_tones),
             key=lambda pitch: (abs(pitch - destination) * 2 + abs(pitch - entry), pitch),
         )
-        notes = [_note("lead_guitar", context, start, SIXTEENTH + PPQ // 12, entry, 73)]
+        notes = [_note("lead_guitar", context, start, EIGHTH, entry, 76)]
         if (tail := start + EIGHTH) < settings.bar_ticks - SIXTEENTH // 2:
-            technique = "harmonic" if context.bar % 8 == 7 else "legato"
-            if technique == "legato":
-                notes[0] = notes[0].model_copy(update={"duration_ticks": EIGHTH + 10})
+            # The answer rings into the space instead of stopping after an eighth.
+            ring = min(settings.bar_ticks - tail - 20, PPQ * 3 // 2)
             notes.append(
-                _note("lead_guitar", context, tail, EIGHTH, answer, 63, articulation=technique)
+                _note("lead_guitar", context, tail, ring, answer, 70, articulation="legato")
             )
         return AgentOutput("短句回应，尾音向下一和弦靠拢", tuple(notes))
 

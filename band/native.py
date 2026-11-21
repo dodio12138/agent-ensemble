@@ -4,12 +4,14 @@ import ctypes as c
 import os
 import sys
 
-from band.music import PLAYER_CHANNEL, TRACK_DEFINITIONS
+from band.music import PLAYER_CHANNEL, TRACK_DEFINITIONS, guitar_program
 
 NATIVE_LIBRARY = "libfluidsynth.dylib" if sys.platform == "darwin" else "libfluidsynth.so"
 
 
 class FluidOutput:
+    device = "fluidsynth"
+
     def __init__(self, library: str, soundfont: str, driver: str | None = None):
         self.library = c.CDLL(library)
         signatures = {
@@ -65,10 +67,7 @@ class FluidOutput:
                 track = event["track_id"]
                 articulation = event.get("articulation")
                 if track in {"rhythm_guitar", "lead_guitar"}:
-                    if articulation == "palm_mute":
-                        event = {**event, "program": 28}
-                    elif articulation == "harmonic":
-                        event = {**event, "program": 31}
+                    event = {**event, "program": guitar_program(event["program"], articulation)}
                 self._note_on(TRACK_DEFINITIONS[track].channel, event)
             case "note_off":
                 channel = TRACK_DEFINITIONS[event["track_id"]].channel

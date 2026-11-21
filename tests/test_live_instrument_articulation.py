@@ -1,4 +1,5 @@
 import asyncio
+import itertools
 
 from band.conductor import Conductor
 from band.music import PPQ, MusicSettings, validate_notes
@@ -29,10 +30,19 @@ def test_rock_guitar_strums_in_real_string_order_and_keeps_distinct_articulation
     assert not any(note.articulation == "palm_mute" for note in lift)
     assert [note.pitch for note in push] == sorted((note.pitch for note in push), reverse=True)
     assert not any(note.track_id == "lead_guitar" for note in answer.notes)
-    lick = [note for note in fill.notes if note.track_id == "lead_guitar"]
-    assert len(lick) >= 5 and any(note.articulation == "legato" for note in lick)
+    lick = sorted(
+        (note for note in fill.notes if note.track_id == "lead_guitar"),
+        key=lambda note: note.start_tick,
+    )
+    assert len(lick) >= 4 and any(note.articulation == "legato" for note in lick)
+    # The line sings: each note runs into the next, and the last one rings out.
+    for note, following in itertools.pairwise(lick):
+        assert note.start_tick + note.duration_ticks >= following.start_tick
+    assert lick[-1].duration_ticks >= PPQ
     assert lick[-1].start_tick + lick[-1].duration_ticks <= 4 * PPQ
-    assert any(note.articulation == "harmonic" for note in ending.notes)
+    assert max(note.pitch for note in lick) <= 81  # not up in the thin, piercing range
+    climax = [note for note in ending.notes if note.track_id == "lead_guitar"]
+    assert climax and not any(note.articulation == "harmonic" for note in climax)
     assert any(
         note.track_id == "drums" and note.pitch == 45 and note.start_tick >= 3 * PPQ
         for note in fill.notes

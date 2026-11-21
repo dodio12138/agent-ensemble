@@ -14,6 +14,7 @@ from .music import (
     active_tracks,
     section_volume,
 )
+from .music import guitar_program as sounding_program
 
 
 def export_midi(
@@ -110,11 +111,7 @@ def export_midi(
                         continue
                     tick = bar_starts[plan.bar] + note.start_tick
                     if track_id in {"rhythm_guitar", "lead_guitar"}:
-                        played_program = program
-                        if note.articulation == "palm_mute":
-                            played_program = 28
-                        elif note.articulation == "harmonic":
-                            played_program = 31
+                        played_program = sounding_program(program, note.articulation)
                         if played_program != guitar_program:
                             events.append((tick, 2, played_program, 0))
                             guitar_program = played_program

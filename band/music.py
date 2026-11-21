@@ -561,3 +561,21 @@ class BarPlan(FrozenModel):
             if fallback != set(self.fallback_tracks):
                 raise ValueError("Fallback statuses must match the fallback tracks")
         return self
+
+
+# GM guitars whose muted string is the plucked "Electric Guitar (muted)" patch.
+_CLEAN_GUITARS = frozenset(range(24, 29))
+
+
+def guitar_program(program: int, articulation: str | None) -> int:
+    """The GM patch a guitar note sounds with.
+
+    Palm mutes on a clean guitar use the muted-guitar patch. On an overdriven or
+    distorted guitar they keep the driven sample, which the short, softer note turns
+    into the heavy chug of a rock rhythm part. Harmonics always use the harmonics patch.
+    """
+    if articulation == "harmonic":
+        return 31
+    if articulation == "palm_mute" and program in _CLEAN_GUITARS:
+        return 28
+    return program
