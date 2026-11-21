@@ -300,6 +300,7 @@ _REFERENCES = (
     ),
     Reference("Jamiroquai", "funk", "dorian_vamp", r"杰米罗奎|\bjamiroquai\b"),
     Reference("万能青年旅店", "alternative_rock", "minor_1645", r"[万萬]能青年旅店"),
+    Reference("五条人", "rock", "major_145", r"五[条條]人"),
     Reference("黑豹乐队", "hard_rock", "mixolydian_174", r"黑豹(?:乐队|樂隊)"),
     Reference("唐朝乐队", "hard_rock", "minor_1767", r"唐朝(?:乐队|樂隊)"),
 )

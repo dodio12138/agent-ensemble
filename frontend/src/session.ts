@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { TRACK_IDS } from './model'
-import type { AudioOutput, BandEvent, Frame, LinkPatch, MidiPatch, Settings, SoundNote, State, Genre, TrackId, TrackSettings } from './model'
+import type { AudioOutput, BandEvent, Frame, JamPatch, LinkPatch, MidiPatch, Settings, SoundNote, State, Genre, TrackId, TrackSettings } from './model'
 import { StudioSynth } from './synth'
 
 type Connection = 'starting' | 'online' | 'retrying' | 'failed'
@@ -247,6 +247,10 @@ export function useSession() {
     send(() => ({ path: `tracks/${track}`, values }))
   }
 
+  function updateJam(values: JamPatch) {
+    send(() => ({ path: 'jam', values }))
+  }
+
   function updateLink(values: LinkPatch) {
     send(() => ({ path: 'link', values }))
   }
@@ -359,7 +363,7 @@ export function useSession() {
 
   return {
     state, connection, error, audible, audioReady, toggleAudio, transport, pauseForScore,
-    updateSettings, updateChord, updateTrack, updateMidi, updateLink, retry, conduct, conducting, conductError,
+    updateSettings, updateChord, updateTrack, updateMidi, updateLink, updateJam, retry, conduct, conducting, conductError,
     improvise, improvising, compose, composing, leaveSong, setPreset, setAutoImprovise,
     active: active.current, performed: performed.current,
   }

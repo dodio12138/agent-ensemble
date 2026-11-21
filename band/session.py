@@ -14,7 +14,8 @@ from uuid import uuid4
 
 from band.audio_routing import AudioRouter, AudioSource, SuperColliderSink
 from band.conductor import Conductor, genre_preset
-from band.improv_arrangement import apply_improvised_fill
+from band.improv_arrangement import apply_improvised_fill, apply_solo
+from band.jam import JamDirector
 from band.link import LinkBridge
 from band.live_midi import LiveMidi, MidiFactory
 from band.midi import export_midi
@@ -179,6 +180,7 @@ class Session:
         self.improvisation_retry_at = 0.0
         self.midi = LiveMidi(self.scheduler, midi_factory)
         self.link = LinkBridge(self.scheduler, self._link_transport)
+        self.jam = JamDirector(self.scheduler, seed=int(self.id[:8], 16))
         self.remote_agents: dict[TrackId, RemoteAgent] = {}
         self.viewers = 0
         self._link_task: asyncio.Task | None = None
@@ -194,10 +196,17 @@ class Session:
             else:
                 self.cancel_improvisation()
                 self.scheduler.stop()
+                self.jam.reset()
                 self.midi.clear_phrase()
                 await self.plan_ahead()
             self.link.notify_transport(action == "play")
             return self.snapshot()
+
+    def configure_jam(self, *, enabled: bool | None = None, profile: str | None = None) -> None:
+        if enabled:
+            # The jam director plans its own solos; the chorus-level auto mode would clash.
+            self.set_automatic_improvisation(False)
+        self.jam.configure(enabled=enabled, profile=profile)
 
     def _link_transport(self, action: Literal["play", "pause"]) -> None:
         if self._link_task is None or self._link_task.done():
@@ -275,6 +284,7 @@ class Session:
             },
             "midi": self.midi.snapshot(),
             "link": self.link.snapshot(),
+            "jam": self.jam.snapshot(),
             "remote_agents": {
                 track: agent.snapshot() for track, agent in self.remote_agents.items()
             },
@@ -292,6 +302,10 @@ class Session:
                 self.link.poll()
             except Exception:
                 logger.exception("Ableton Link poll failed for session %s", self.id)
+            try:
+                self.jam.poll()
+            except Exception:
+                logger.exception("Jam director failed for session %s", self.id)
             await self.plan_ahead()
             if (
                 self.improvisation_auto
@@ -342,6 +356,8 @@ class Session:
                 plan = apply_improvised_fill(
                     plan, settings, band_phrase, half=None if offset is None else offset % 2
                 )
+            if solo := self.jam.solo_for(bar):
+                plan = apply_solo(plan, settings, *solo)
             plan = plan.model_copy(
                 update={
                     "harmony": settings.chord_at(bar).symbol,

@@ -84,6 +84,13 @@ class LinkPatch(BaseModel):
     start_stop: bool | None = None
 
 
+class JamPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool | None = None
+    profile: Literal["current", "wutiaoren"] | None = None
+
+
 class RemoteHello(BaseModel):
     type: Literal["hello"]
     name: str = Field(default="远程乐手", min_length=1, max_length=40)
@@ -187,6 +194,15 @@ def create_app(
             }
             for session_id in order
         ]
+
+    @app.patch("/sessions/{session_id}/jam")
+    async def configure_jam(session_id: str, patch: JamPatch) -> dict:
+        """Let the band keep reshaping the tune: solos, dynamics, tempo and grooves."""
+        session = get_session(session_id)
+        async with session.commands:
+            session.configure_jam(**patch.model_dump(exclude_unset=True))
+            await session.plan_ahead()
+        return session.snapshot()
 
     @app.patch("/sessions/{session_id}/link")
     async def configure_link(session_id: str, patch: LinkPatch) -> dict:

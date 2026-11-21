@@ -29,9 +29,9 @@ const sounds: Record<TrackId, Record<number, string>> = {
   drums: { 0: '标准鼓组' },
   bass: { 32: '原声贝斯', 33: '电贝斯 · 指弹', 34: '电贝斯 · 拨片', 35: '无品贝斯', 38: '合成贝斯' },
   piano: { 0: '三角钢琴', 1: '明亮钢琴', 2: '电声大钢琴', 4: '电钢琴', 11: '颤音琴', 19: '管风琴' },
-  rhythm_guitar: { 27: '清音电吉他' },
-  lead_guitar: { 30: '失真电吉他' },
-  synth: { 89: '暖色 Pad', 48: '弦乐合奏' },
+  rhythm_guitar: { 27: '清音电吉他', 29: '过载电吉他', 30: '失真电吉他', 25: '钢弦原声吉他' },
+  lead_guitar: { 30: '失真电吉他', 29: '过载电吉他', 27: '清音电吉他' },
+  synth: { 89: '暖色 Pad', 48: '弦乐合奏', 21: '手风琴', 61: '铜管组' },
 }
 const icons = { drums: Drum, bass: Guitar, piano: Piano, rhythm_guitar: Guitar, lead_guitar: Zap, synth: Waves }
 const defaultProgression = ['Dm7', 'G7', 'Cmaj7', 'Am7', 'Dm7', 'G7', 'Em7', 'A7']
@@ -567,6 +567,7 @@ function App() {
                   onCompose={session.compose}
                   onLeaveSong={session.leaveSong}
                   onAuto={session.setAutoImprovise}
+                  onJam={session.updateJam}
                 />
               )}
             </div>

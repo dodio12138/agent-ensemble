@@ -3,7 +3,7 @@ import { FileMusic, Send } from 'lucide-react'
 import {
   CORE_TRACK_IDS, GENRE_NAMES, GROOVE_NAMES, SECTION_NAMES, TRACK_INFO,
   type ConductorPlan, type Genre, type HarmonicMove, type ImprovisedChorus, type ImprovisationPhrase,
-  type MusicProfile, type Song, type State,
+  type JamPatch, type MusicProfile, type Song, type State,
 } from './model'
 
 // Every style the band can play, grouped by family. Each applies at once with local rules.
@@ -246,7 +246,7 @@ function SongRoadmap({ song, state, startBar, pending }: {
   )
 }
 
-export function ConductorPanel({ state, disabled, conducting, improvising, composing, error, onConduct, onPreset, onImprovise, onAuto, onCompose, onLeaveSong }: {
+export function ConductorPanel({ state, disabled, conducting, improvising, composing, error, onConduct, onPreset, onImprovise, onAuto, onCompose, onLeaveSong, onJam }: {
   state: State | null
   disabled: boolean
   conducting: boolean
@@ -259,6 +259,7 @@ export function ConductorPanel({ state, disabled, conducting, improvising, compo
   onAuto: (auto: boolean) => void
   onCompose: (instruction: string) => void
   onLeaveSong: () => void
+  onJam: (values: JamPatch) => void
 }) {
   const [instruction, setInstruction] = useState('')
   const input = useRef<HTMLInputElement>(null)
@@ -305,7 +306,9 @@ export function ConductorPanel({ state, disabled, conducting, improvising, compo
     queuedStyle, queuedTiming, staged && !queuedStyle ? '换和声' : '',
   ].filter(Boolean).join(' · ') : ''
   const queuedBar = (staged ?? next)?.bar
-  const playingMode = improvisation?.active ? '即兴中'
+  const jam = state?.jam
+  const playingMode = jam?.enabled ? `即兴演出${jam.current ? ` · ${jam.current.label}` : ''}`
+    : improvisation?.active ? '即兴中'
     : song ? `整首歌${state?.section ? ` · ${SECTION_NAMES[state.section.role]}` : ''}` : '八小节循环'
   const busyText = conducting ? '正在生成编排，乐队照常演奏。'
     : composingSong ? '正在安排段落，乐队照常演奏。'
@@ -337,7 +340,9 @@ export function ConductorPanel({ state, disabled, conducting, improvising, compo
               <span>强度 <b>{active.intensity}%</b></span>
               {traits(active) && <span className="now-traits">{traits(active)}</span>}
             </div>
-            {queued && queuedBar != null && (
+            {jam?.enabled && jam.next ? (
+              <p className="now-next">第 {jam.next.start_bar + 1} 小节起 → {jam.next.label}</p>
+            ) : queued && queuedBar != null && (
               <p className="now-next">第 {queuedBar + 1} 小节起 → {queued}</p>
             )}
             <p className={`now-status ${failure ? 'error' : ''}`} role="status">
@@ -435,17 +440,49 @@ export function ConductorPanel({ state, disabled, conducting, improvising, compo
               </button>
             ))}
             {mode === 'improvise' && improvisation && (
-              <label className="composer-toggle">
-                <input type="checkbox" checked={improvisation.auto} disabled={disabled}
+              <label className="composer-toggle" title="每轮八小节自动换和声并安排领奏">
+                <input type="checkbox" checked={improvisation.auto} disabled={disabled || jam?.enabled}
                   onChange={event => onAuto(event.target.checked)} />
                 自动即兴
               </label>
             )}
           </div>
+          {mode === 'improvise' && jam && (
+            <div className="jam-controls">
+              <label className="jam-switch">
+                <input type="checkbox" checked={jam.enabled} disabled={disabled}
+                  onChange={event => onJam({ enabled: event.target.checked })} />
+                <span>
+                  <strong>即兴演出</strong>
+                  <small>乐队自己轮流独奏、推进到高潮、变速、换律动、急停再进</small>
+                </span>
+              </label>
+              <select aria-label="即兴演出风格" value={jam.profile} disabled={disabled}
+                onChange={event => onJam({ profile: event.target.value })}>
+                {Object.entries(jam.profiles).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+            </div>
+          )}
         </section>
 
-        {(improvisation?.active || improvisation?.pending || song) && (
+        {(improvisation?.active || improvisation?.pending || song || (jam?.enabled && jam.history.length > 0)) && (
           <section className="conductor-timeline" aria-label="演奏安排">
+            {jam?.enabled && jam.history.length > 0 && (
+              <ol className="jam-history" aria-label="即兴演出段落">
+                {[...jam.history, ...(jam.next && !jam.history.some(item => item.start_bar === jam.next?.start_bar) ? [jam.next] : [])]
+                  .map(item => {
+                    const current = jam.current?.start_bar === item.start_bar
+                    const upcoming = state && item.start_bar > state.bar && !current
+                    return (
+                      <li key={item.start_bar} className={current ? 'current' : upcoming ? 'upcoming' : undefined}
+                        aria-current={current ? 'step' : undefined}>
+                        <span>{item.start_bar + 1}–{item.end_bar}</span>
+                        <strong>{item.label}</strong>
+                      </li>
+                    )
+                  })}
+              </ol>
+            )}
             {improvisation?.active && (
               <ChorusPreview chorus={improvisation.active} currentBar={state?.transport === 'stopped' ? undefined : state?.bar}
                 transport={state?.transport} lineup={state?.settings.lineup} />

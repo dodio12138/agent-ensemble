@@ -360,6 +360,7 @@ export interface State {
   transition?: GrooveTransition | null
   midi?: MidiState
   link?: LinkState
+  jam?: JamState
   timing?: TimingState
   remote_agents?: Partial<Record<TrackId, RemoteAgentState>>
 }
@@ -377,6 +378,27 @@ export interface LinkState {
   playing?: boolean
   corrections?: number
   last_shift_ms?: number
+}
+
+export interface JamSection {
+  start_bar: number
+  end_bar: number
+  move: string
+  label: string
+}
+
+export interface JamState {
+  enabled: boolean
+  profile: string
+  profiles: Record<string, string>
+  current: JamSection | null
+  next: JamSection | null
+  history: JamSection[]
+}
+
+export interface JamPatch {
+  enabled?: boolean
+  profile?: string
 }
 
 export interface LinkPatch {

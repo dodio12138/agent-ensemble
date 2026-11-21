@@ -154,7 +154,12 @@ _LINES: dict[str, tuple[tuple[tuple[int, int, str, int], ...], ...]] = {
 }
 _ORDER = {"R": 0, "b3": 1.5, "3": 2, "5": 3, "7": 4, "9": 5, "R+": 6}
 # Melodic register and centre for whoever plays the line.
-_REGISTER = {"piano": (64, 84, 72), "lead_guitar": (62, 86, 72), "bass": (40, 55, 47)}
+_REGISTER = {
+    "piano": (64, 84, 72),
+    "lead_guitar": (62, 86, 72),
+    "synth": (62, 84, 72),
+    "bass": (40, 55, 47),
+}
 _TOM_FILL = ((12, 50, 84), (13, 48, 82), (14, 47, 86), (15, 45, 90))
 
 
@@ -258,8 +263,23 @@ def apply_improvised_fill(
     ):
         return plan
     half = plan.bar % 2 if half is None else half % 2
-    if phrase.lead == "drums":
-        if half == 0 and phrase.character != "build":
+    # In the modern band the lead guitar takes melodic solos; keys keep comping.
+    track: TrackId = (
+        "lead_guitar" if phrase.lead == "piano" and settings.lineup == "modern" else phrase.lead
+    )
+    return apply_solo(plan, settings, track, phrase.character, half)
+
+
+def apply_solo(
+    plan: BarPlan,
+    settings: MusicSettings,
+    track: TrackId,
+    character: str,
+    half: int,
+) -> BarPlan:
+    """Replace one track's bar with a solo line, or give the drums a fill."""
+    if track == "drums":
+        if half == 0 and character != "build":
             return plan
         fill_from = 3 * PPQ
         if settings.meter != "4/4" or fill_from >= settings.bar_ticks:
@@ -283,11 +303,7 @@ def apply_improvised_fill(
         )
         notes = kept + fill
     else:
-        # In the modern band the lead guitar takes melodic solos; keys keep comping.
-        track: TrackId = (
-            "lead_guitar" if phrase.lead == "piano" and settings.lineup == "modern" else phrase.lead
-        )
-        line = improvised_line(settings, plan.bar, phrase.character, half, track)
+        line = improvised_line(settings, plan.bar, character, half, track)
         if not line:
             return plan
         kept = tuple(note for note in plan.notes if note.track_id != track)

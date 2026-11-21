@@ -386,6 +386,19 @@ button.audio-toggle:hover { background: #2a2b2e; }
 .composer-modes button[aria-selected="true"] { background: #312824; color: var(--orange); border-color: #694b39; }
 .composer-toggle { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; color: var(--text); font-size: 12px; }
 .composer-toggle input { margin: 0; accent-color: var(--mint); }
+.jam-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #3f5d53; border-radius: 6px; background: #1c2522; }
+.jam-switch { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
+.jam-switch input { margin: 3px 0 0; accent-color: var(--mint); }
+.jam-switch span { display: grid; gap: 2px; }
+.jam-switch strong { color: var(--mint); font-size: 13px; }
+.jam-switch small { color: var(--muted); font-size: 11px; line-height: 1.4; }
+.jam-controls select { min-height: 30px; padding: 3px 6px; border: 1px solid #3e4041; border-radius: 5px; background: var(--deep); color: var(--text); font-size: 12px; }
+.jam-history { list-style: none; display: grid; gap: 4px; margin: 0; padding: 0; }
+.jam-history li { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 8px; align-items: baseline; padding: 4px 8px; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); font-size: 11px; }
+.jam-history li strong { color: var(--text); font-size: 12px; }
+.jam-history li.current { border-color: #628779; background: #24312d; }
+.jam-history li.current strong { color: var(--mint); }
+.jam-history li.upcoming { border-style: dashed; }
 .conductor-timeline { display: grid; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
 .timeline-actions { display: flex; justify-content: flex-end; color: var(--orange); font-size: 11px; }
 .timeline-actions button { min-height: 28px; padding: 3px 10px; border: 1px solid #484443; border-radius: 5px; background: var(--deep); color: var(--text); font-size: 12px; }

@@ -425,6 +425,10 @@ class Scheduler:
     def stage_settings(self, patch: dict[str, Any], *, next_chorus: bool = False) -> Event:
         return self._stage(patch, None, next_chorus=next_chorus)
 
+    def record_jam(self, move: str, **fields: Any) -> None:
+        with self._condition:
+            self._record("jam", move=move, **fields)
+
     def record_remote_agent(self, track: TrackId, status: str, **fields: Any) -> None:
         with self._condition:
             self._record("remote_agent", track_id=track, status=status, **fields)
