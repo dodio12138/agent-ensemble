@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname -- "$0")/env.sh"
+
+case "$(uname -s)-$(uname -m)" in
+    Darwin-x86_64) platform=osx-64 ;;
+    Darwin-arm64) platform=osx-arm64 ;;
+    Linux-x86_64) platform=linux-64 ;;
+    Linux-aarch64) platform=linux-aarch64 ;;
+    *) printf 'Native output supports macOS and glibc Linux on Intel and ARM.\n' >&2; exit 1 ;;
+esac
+
+mkdir -p -- "$RUNTIME/native-tools" "$ROOT/soundfonts"
+temp="$(mktemp -d "$RUNTIME/native-download.XXXXXX")"
+trap 'rm -rf -- "$temp"' EXIT
+mamba="$RUNTIME/native-tools/bin/micromamba"
+if [[ ! -x "$mamba" ]]; then
+    archive="micromamba-$platform.tar.bz2"
+    origin="https://github.com/mamba-org/micromamba-releases/releases/download/2.10.0-0"
+    curl -fsSL "$origin/$archive" -o "$temp/$archive"
+    curl -fsSL "$origin/$archive.sha256" -o "$temp/check"
+    (cd -- "$temp" && shasum -a 256 -c check)
+    tar -xjf "$temp/$archive" -C "$RUNTIME/native-tools" bin/micromamba
+fi
+if [[ ! -x "$RUNTIME/fluidsynth/bin/fluidsynth" ]]; then
+    "$mamba" --no-rc --root-prefix "$RUNTIME/mamba" create --yes --prefix "$RUNTIME/fluidsynth" \
+        --override-channels --channel conda-forge 'fluidsynth=2.6.2'
+fi
+
+origin="https://raw.githubusercontent.com/mrbumpy409/GeneralUser-GS/684543d5e5efaef08d02be50dcda8d552478fa60"
+if [[ ! -f "$ROOT/soundfonts/GeneralUser-GS.sf2" ]]; then
+    curl -fsSL "$origin/GeneralUser-GS.sf2" -o "$temp/GeneralUser-GS.sf2"
+    printf '%s  %s\n' \
+        9575028c7a1f589f5770fccc8cff2734566af40cd26ed836944e9a5152688cfe GeneralUser-GS.sf2 \
+        > "$temp/sf-check"
+    (cd -- "$temp" && shasum -a 256 -c sf-check)
+    mv -- "$temp/GeneralUser-GS.sf2" "$ROOT/soundfonts/"
+fi
+if [[ ! -f "$ROOT/soundfonts/GeneralUser-GS-LICENSE.txt" ]]; then
+    curl -fsSL "$origin/documentation/LICENSE.txt" -o "$temp/GeneralUser-GS-LICENSE.txt"
+    mv -- "$temp/GeneralUser-GS-LICENSE.txt" "$ROOT/soundfonts/"
+fi
+"$RUNTIME/fluidsynth/bin/fluidsynth" --version

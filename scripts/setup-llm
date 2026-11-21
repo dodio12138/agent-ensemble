@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname -- "$0")/env.sh"
+
+llama_version=b12242
+case "$(uname -s)-$(uname -m)" in
+    Darwin-x86_64)
+        platform=macos-x64
+        binary_sha=4d5b3e5934250af058444d3828105ffa9ce1d80a42be9e29c1a1c4ff7d8278df ;;
+    Darwin-arm64)
+        platform=macos-arm64
+        binary_sha=d58f23da84befb84b7d07590e7fd18ea68a3f1df59f9808b52370255aa60f20b ;;
+    Linux-x86_64)
+        platform=ubuntu-x64
+        binary_sha=909eef25cd53e6601c8a07c866d8dbb2983e74177088d55182137a8fb8255d62 ;;
+    Linux-aarch64)
+        platform=ubuntu-arm64
+        binary_sha=8440ca9460a90475c06c49bd96c451c5022d1a585c49f295bdc8548cbc5080d9 ;;
+    *) printf 'Local conductor supports macOS and glibc Linux on Intel and ARM.\n' >&2; exit 1 ;;
+esac
+
+llm_dir="$RUNTIME/llm"
+engine="$llm_dir/llama-$llama_version"
+model=qwen2.5-1.5b-instruct-q4_k_m.gguf
+model_sha=6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e
+model_origin='https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/91cad51170dc346986eccefdc2dd33a9da36ead9'
+mkdir -p -- "$llm_dir"
+temp="$(mktemp -d "$llm_dir/download.XXXXXX")"
+trap 'rm -rf -- "$temp"' EXIT
+if [[ ! -x "$engine/llama-server" ]]; then
+    archive="llama-$llama_version-bin-$platform.tar.gz"
+    curl --retry 3 -fsSL "https://github.com/ggml-org/llama.cpp/releases/download/$llama_version/$archive" -o "$temp/$archive"
+    printf '%s  %s\n' "$binary_sha" "$archive" > "$temp/check"
+    (cd -- "$temp" && shasum -a 256 -c check)
+    mkdir -p "$temp/archive"
+    tar -xzf "$temp/$archive" -C "$temp/archive"
+    server="$(find "$temp/archive" -type f -name llama-server -print -quit)"
+    test -n "$server"
+    mv -- "$(dirname -- "$server")" "$engine"
+fi
+if [[ ! -f "$llm_dir/$model" ]]; then
+    printf 'Downloading local Qwen model (1.12 GB)\n'
+    curl --retry 3 -fL "$model_origin/$model?download=true" -o "$temp/$model"
+    printf '%s  %s\n' "$model_sha" "$model" > "$temp/check"
+    (cd -- "$temp" && shasum -a 256 -c check)
+    mv -- "$temp/$model" "$llm_dir/$model"
+fi
+if [[ ! -f "$llm_dir/Qwen-LICENSE" ]]; then
+    curl --retry 3 -fsSL "$model_origin/LICENSE" -o "$temp/Qwen-LICENSE"
+    mv -- "$temp/Qwen-LICENSE" "$llm_dir/"
+fi
+printf 'Local conductor installed in %s\n' "$llm_dir"

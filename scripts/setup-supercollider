@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname -- "$0")/env.sh"
+
+version=3.14.1
+case "$(uname -s)-$(uname -m)" in
+    Darwin-x86_64)
+        variant=x64-legacy
+        archive_hash=bfa6eedab57538622213274be203075dcb24d60a78e3db39cb3729f20619f9be
+        ;;
+    Darwin-arm64)
+        variant=universal
+        archive_hash=ed264b32752d27fc86e506dd0a7eb36de7c19ebce73c3fdf2ed5514f8c73f02e
+        ;;
+    *)
+        printf '%s\n' 'This SuperCollider installer supports macOS Intel and Apple silicon.' >&2
+        exit 1
+        ;;
+esac
+
+sc_root="$RUNTIME/supercollider"
+app="$sc_root/SuperCollider.app"
+mkdir -p -- "$sc_root"
+work="$(mktemp -d "$sc_root/setup.XXXXXX")"
+mount="$work/mount"
+mounted=0
+cleanup() {
+    if [[ "$mounted" == 1 ]]; then
+        /usr/bin/hdiutil detach -quiet "$mount" || return
+    fi
+    rm -r -- "$work"
+}
+trap cleanup EXIT
+
+if [[ ! -x "$app/Contents/MacOS/sclang" || ! -x "$app/Contents/Resources/scsynth" ]]; then
+    archive="SuperCollider-$version-macOS-$variant.dmg"
+    archive_path="$sc_root/$archive"
+    if [[ ! -f "$archive_path" ]]; then
+        url="https://github.com/supercollider/supercollider/releases/download/Version-$version/$archive"
+        curl -fL --retry 3 --silent --show-error "$url" -o "$work/$archive"
+        archive_path="$work/$archive"
+    fi
+    printf '%s  %s\n' "$archive_hash" "$archive_path" | shasum -a 256 -c -
+    mkdir -p -- "$mount"
+    /usr/bin/hdiutil attach -quiet -nobrowse -noautoopen -readonly -mountpoint "$mount" "$archive_path"
+    mounted=1
+    /usr/bin/ditto "$mount/SuperCollider.app" "$work/SuperCollider.app"
+    cp "$mount/COPYING" "$sc_root/COPYING"
+    /usr/bin/hdiutil detach -quiet "$mount"
+    mounted=0
+    if [[ -e "$app" ]]; then
+        printf 'Incomplete SuperCollider installation at %s\n' "$app" >&2
+        exit 1
+    fi
+    mv "$work/SuperCollider.app" "$app"
+fi
+
+ln -sfn SuperCollider.app/Contents/Resources/scsynth "$sc_root/scsynth"
+ln -sfn SuperCollider.app/Contents/Resources/plugins "$sc_root/plugins"
+mkdir -p -- "$sc_root/config" "$sc_root/data" "$sc_root/cache" "$work/defs"
+printf 'includePaths: []\nexcludePaths: []\npostInlineWarnings: false\n' > "$work/language.yaml"
+
+XDG_CONFIG_HOME="$sc_root/config" \
+XDG_DATA_HOME="$sc_root/data" \
+XDG_CACHE_HOME="$sc_root/cache" \
+QT_QPA_PLATFORM=cocoa \
+ENSEMBLE_SYNTHDEF_DIR="$work/defs" \
+    /usr/bin/perl -e 'alarm shift @ARGV; exec @ARGV or die "Unable to run sclang: $!\n"' 90 \
+    "$app/Contents/MacOS/sclang" -D -a -u 0 -d "$work" -l "$work/language.yaml" \
+    --include-path "$app/Contents/Resources/SCClassLibrary" "$ROOT/audio/supercollider/ensemble.scd"
+
+mkdir -p -- "$sc_root/synthdefs"
+voices=(ae_kick ae_snare ae_hat ae_tom ae_bass ae_electric_bass ae_piano ae_epiano ae_vibes ae_organ
+    ae_clean_guitar ae_lead_guitar ae_pad ae_strings ae_drum_sample)
+for voice in "${voices[@]}"; do
+    test -s "$work/defs/$voice.scsyndef"
+done
+for voice in "${voices[@]}"; do
+    mv "$work/defs/$voice.scsyndef" "$sc_root/synthdefs/"
+done
+
+fluid="$RUNTIME/fluidsynth/bin/fluidsynth"
+soundfont="$ROOT/soundfonts/GeneralUser-GS.sf2"
+if [[ -x "$fluid" && -x "$ROOT/.venv/bin/python" && -f "$soundfont" ]]; then
+    "$ROOT/.venv/bin/python" "$ROOT/audio/supercollider/build_drum_kit.py" \
+        "$fluid" "$soundfont" "$work/drum-kit"
+    mkdir -p -- "$sc_root/drum-kit"
+    for sample in "$work"/drum-kit/*.wav; do
+        mv "$sample" "$sc_root/drum-kit/"
+    done
+fi
+
+"$sc_root/scsynth" -v

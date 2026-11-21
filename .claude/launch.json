@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ensemble",
+      "runtimeExecutable": ".venv/bin/python",
+      "runtimeArgs": ["-m", "band", "--port", "8790", "--state-dir", ".runtime/data-dev"],
+      "port": 8790
+    }
+  ]
+}

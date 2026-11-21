@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname -- "$0")/env.sh"
+
+case "$(uname -s)-$(uname -m)" in
+    Darwin-x86_64) platform=darwin-x64; uv_platform=x86_64-apple-darwin ;;
+    Darwin-arm64) platform=darwin-arm64; uv_platform=aarch64-apple-darwin ;;
+    Linux-x86_64) platform=linux-x64; uv_platform=x86_64-unknown-linux-gnu ;;
+    Linux-aarch64) platform=linux-arm64; uv_platform=aarch64-unknown-linux-gnu ;;
+    *) printf 'Setup supports macOS and glibc Linux on Intel and ARM.\n' >&2; exit 1 ;;
+esac
+
+mkdir -p -- "$RUNTIME/bin"
+temp="$(mktemp -d "$RUNTIME/setup.XXXXXX")"
+trap 'rm -rf -- "$temp"' EXIT
+uv_binary="$RUNTIME/bin/uv"
+if [[ ! -x "$uv_binary" ]] || [[ "$("$uv_binary" --version)" != "uv $UV_VERSION"* ]]; then
+    archive="uv-$uv_platform.tar.gz"
+    origin="https://github.com/astral-sh/uv/releases/download/$UV_VERSION"
+    curl -fsSL "$origin/$archive" -o "$temp/$archive"
+    curl -fsSL "$origin/$archive.sha256" -o "$temp/uv-check"
+    (cd -- "$temp" && shasum -a 256 -c uv-check)
+    tar -xzf "$temp/$archive" -C "$temp"
+    mv -- "$temp/${archive%.tar.gz}/uv" "$uv_binary"
+fi
+if [[ ! -x "$NODE_HOME/bin/node" ]]; then
+    archive="node-v$NODE_VERSION-$platform.tar.gz"
+    origin="https://nodejs.org/dist/v$NODE_VERSION"
+    curl --fail --silent --show-error --location "$origin/$archive" --output "$temp/$archive"
+    curl --fail --silent --show-error --location "$origin/SHASUMS256.txt" --output "$temp/sums"
+    awk -v archive="$archive" '$2 == archive { print; found=1 } END { if (!found) exit 1 }' "$temp/sums" > "$temp/check"
+    (cd -- "$temp" && shasum -a 256 -c check)
+    tar -xzf "$temp/$archive" -C "$temp"
+    mv -- "$temp/${archive%.tar.gz}" "$NODE_HOME"
+fi
+"$uv_binary" sync --locked --python "$(cat .python-version)"
+npm --prefix frontend ci --no-audit --no-fund
+npm --prefix frontend run build
+.venv/bin/python -c "from band.precise_timer import build; build()" || printf 'Native timer not built; the scheduler will use the Python wait.\n'
