@@ -93,6 +93,13 @@ function toneFor(track: VoiceTrack, program?: number): ToneName | null {
   return GAME_TRACKS[track] ?? null
 }
 
+// Vowel formants (Hz, gain): "ah" for a choir, "oo" for the sung line, a brighter synth voice.
+const VOWELS = {
+  ah: [[800, 1], [1150, 0.5], [2900, 0.22]],
+  oo: [[350, 1], [620, 0.42], [2400, 0.12]],
+  synth: [[650, 1], [1080, 0.6], [2600, 0.3]],
+} as const
+
 interface Voice {
   track: VoiceTrack
   output: GainNode
@@ -178,7 +185,9 @@ export class StudioSynth {
     const voice: Voice = { track, output, sources: [] }
     this.voices.set(event.event_id, voice)
     let tone: ToneName | null = null
-    if (track === 'drums') {
+    if (track === 'vocal') {
+      this.sing(context, event, volume, voice)
+    } else if (track === 'drums') {
       this.drum(
         context, event.pitch, volume, voice, event.event_id,
         event.velocity ?? 85, event.volume ?? 0.8,
@@ -381,6 +390,65 @@ export class StudioSynth {
     const sustain = electricBass ? 0.51 : bass ? 0.32 : 0.15
     gain.exponentialRampToValueAtTime(Math.max(0.00011, peak * sustain), now + (bass ? 0.21 : 0.40))
     gain.exponentialRampToValueAtTime(0.0001, now + (voice.track === 'player' ? 12 : 4))
+  }
+
+  /** A wordless voice: a buzzing source through vowel formants, sliding between notes. */
+  private sing(context: AudioContext, event: BandEvent, volume: number, voice: Voice) {
+    const now = context.currentTime
+    const pitch = event.pitch ?? 60
+    const target = 440 * 2 ** ((pitch - 69) / 12)
+    const choir = event.program === 52
+    const vowel = choir ? VOWELS.ah : event.program === 54 ? VOWELS.synth : VOWELS.oo
+    const slide = event.slide_from !== undefined
+    const start = slide ? 440 * 2 ** ((event.slide_from! - 69) / 12) : target
+    const glide = Math.max(0.02, (event.slide_ms ?? 80) / 1000)
+
+    const mix = context.createGain()
+    const lowpass = context.createBiquadFilter()
+    lowpass.type = 'lowpass'
+    lowpass.frequency.value = choir ? 3800 : 4600
+    const pan = context.createStereoPanner()
+    pan.pan.value = choir ? 0 : -0.04
+    mix.connect(lowpass).connect(pan).connect(voice.output)
+    const bands = vowel.map(([frequency, gain]) => {
+      const band = context.createBiquadFilter()
+      band.type = 'bandpass'
+      band.frequency.value = frequency
+      band.Q.value = frequency < 1000 ? 6 : 9
+      const level = context.createGain()
+      level.gain.value = gain * 2.4
+      band.connect(level).connect(mix)
+      return band
+    })
+    // A choir is several singers slightly apart; a soloist is one voice.
+    const detunes = choir ? [-9, 0, 8] : [0]
+    const vibrato = context.createOscillator()
+    vibrato.frequency.value = 5.2
+    const depth = context.createGain()
+    depth.gain.setValueAtTime(0, now)
+    // Singers start a note straight and let the vibrato bloom as it is held.
+    depth.gain.setValueAtTime(0, now + glide + 0.12)
+    depth.gain.linearRampToValueAtTime(choir ? 9 : 16, now + glide + 0.5)
+    vibrato.connect(depth)
+    vibrato.start(now)
+    voice.sources.push(vibrato)
+    for (const cents of detunes) {
+      const source = context.createOscillator()
+      source.type = 'sawtooth'
+      source.detune.value = cents
+      source.frequency.setValueAtTime(start, now)
+      if (slide) source.frequency.exponentialRampToValueAtTime(target, now + glide)
+      depth.connect(source.detune)
+      for (const band of bands) source.connect(band)
+      source.start(now)
+      voice.sources.push(source)
+    }
+    const peak = Math.max(0.0002, volume * (choir ? 0.09 : 0.13))
+    const gain = voice.output.gain
+    gain.setValueAtTime(0.0001, now)
+    // A tied note keeps the breath going, so it barely re-attacks.
+    gain.exponentialRampToValueAtTime(peak * (slide ? 0.9 : 1), now + (slide ? 0.025 : choir ? 0.18 : 0.06))
+    gain.exponentialRampToValueAtTime(peak * 0.85, now + 0.4)
   }
 
   private release(id: string, immediately = false) {

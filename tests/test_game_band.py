@@ -33,7 +33,7 @@ def part(bar_plan, track):
 
 
 def test_game_lineup_has_its_own_tracks_and_channels():
-    assert active_tracks("game") == ("drums", "bass", "piano", *GAME_PARTS)
+    assert active_tracks("game") == ("drums", "bass", "piano", *GAME_PARTS, "vocal")
     channels = [definition.channel for definition in TRACK_DEFINITIONS.values()]
     assert len(channels) == len(set(channels)) and 2 not in channels  # 2 is the live keyboard
 

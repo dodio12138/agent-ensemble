@@ -60,8 +60,9 @@ def test_six_midi_tracks_and_mixer_state_survive_lineup_toggles(tmp_path):
             "Rhythm Guitar",
             "Lead Guitar",
             "Synth Pad",
+            "Voice",
         ]
-        for track, channel in zip(midi.tracks[1:], (9, 1, 0, 3, 4, 5), strict=True):
+        for track, channel in zip(midi.tracks[1:], (9, 1, 0, 3, 4, 5, 11), strict=True):
             notes = [event for event in track if event.type == "note_on"]
             assert notes and {event.channel for event in notes} == {channel}
         assert (

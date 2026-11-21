@@ -22,24 +22,24 @@ export function activeMeter(state?: State | null): TimeSignature {
 export const CORE_TRACK_IDS = ['drums', 'bass', 'piano'] as const
 const MODERN_TRACK_IDS = ['rhythm_guitar', 'lead_guitar', 'synth'] as const
 const GAME_TRACK_IDS = ['strings', 'brass', 'melody', 'chip'] as const
-export const TRACK_IDS = [...CORE_TRACK_IDS, ...MODERN_TRACK_IDS, ...GAME_TRACK_IDS] as const
+export const TRACK_IDS = [...CORE_TRACK_IDS, ...MODERN_TRACK_IDS, ...GAME_TRACK_IDS, 'vocal'] as const
 type CoreTrackId = typeof CORE_TRACK_IDS[number]
-type AddedTrackId = typeof MODERN_TRACK_IDS[number] | typeof GAME_TRACK_IDS[number]
+type AddedTrackId = typeof MODERN_TRACK_IDS[number] | typeof GAME_TRACK_IDS[number] | 'vocal'
 export type TrackId = typeof TRACK_IDS[number]
 export type Lineup = 'trio' | 'modern' | 'game'
 
 export const LINEUPS = ['trio', 'modern', 'game'] as const
 export const LINEUP_NAMES = { trio: '三重奏', modern: '现代乐队', game: '游戏配乐' } as const
 export const LINEUP_SUBTITLES = {
-  trio: '即兴三重奏 · Drums / Bass / Piano',
-  modern: '现代即兴乐队 · 6 轨',
-  game: '游戏配乐编制 · 7 轨',
+  trio: '即兴三重奏 + 人声',
+  modern: '现代即兴乐队 · 6 轨 + 人声',
+  game: '游戏配乐编制 · 7 轨 + 人声',
 } as const
 
 const LINEUP_TRACKS: Record<Lineup, readonly TrackId[]> = {
-  trio: CORE_TRACK_IDS,
-  modern: [...CORE_TRACK_IDS, ...MODERN_TRACK_IDS],
-  game: [...CORE_TRACK_IDS, ...GAME_TRACK_IDS],
+  trio: [...CORE_TRACK_IDS, 'vocal'],
+  modern: [...CORE_TRACK_IDS, ...MODERN_TRACK_IDS, 'vocal'],
+  game: [...CORE_TRACK_IDS, ...GAME_TRACK_IDS, 'vocal'],
 }
 
 export function tracksFor(lineup?: Lineup): readonly TrackId[] {
@@ -69,6 +69,7 @@ export const TRACK_INFO = {
   brass: { name: '铜管', en: 'BRASS', color: '#e6c06e', range: [45, 79], program: 60 },
   melody: { name: '主旋律', en: 'THEME', color: '#8fd3c4', range: [60, 96], program: 73 },
   chip: { name: '芯片琶音', en: 'CHIP ARP', color: '#9fb6f0', range: [48, 96], program: 80 },
+  vocal: { name: '人声', en: 'VOICE', color: '#f2a7a0', range: [48, 84], program: 53 },
 } as const
 
 export function trackLabel(track: TrackId, lineup?: Lineup) {
@@ -170,6 +171,12 @@ export interface ConductorPlan {
   bass: 'walking' | 'root' | 'syncopated'
   piano: 'comp' | 'sustained' | 'syncopated'
   profile?: MusicProfile | null
+  vocal?: VocalRole | null
+}
+
+export type VocalRole = 'off' | 'pad' | 'lead' | 'backing' | 'scat'
+export const VOCAL_ROLE_NAMES: Record<VocalRole, string> = {
+  off: '不唱', pad: '合唱铺底', lead: '无词领唱', backing: '句尾伴唱', scat: '爵士拟声',
 }
 
 export interface ConductorResult {
@@ -290,6 +297,8 @@ export interface Settings {
   lineup?: Lineup
   meter?: TimeSignature
   song?: Song | null
+  vocal_glide?: boolean
+  vocal_glide_amount?: number
 }
 
 export interface TrackSettings {
@@ -391,6 +400,7 @@ export interface State {
   audio_reason?: string | null
   audio_device?: 'logic' | 'fluidsynth' | null
   audio_routes?: AudioOutput[]
+  vocal_role?: VocalRole
   audio_active?: BandEvent[]
   locked_until_bar?: number
   state_version?: number
@@ -474,6 +484,8 @@ export interface RemoteAgentState {
 
 export interface BandEvent {
   articulation?: 'normal' | 'palm_mute' | 'legato' | 'harmonic'
+  slide_from?: number
+  slide_ms?: number
   sequence: number
   type: string
   track_id?: TrackId

@@ -25,6 +25,7 @@ from band.music import (
     Mode,
     MusicSettings,
     TrackId,
+    VocalRole,
 )
 from band.style_direction import (
     _ALTERNATE_GROOVES,
@@ -32,9 +33,16 @@ from band.style_direction import (
     StyleIntent,
     arrange_style,
 )
+from band.vocals import (
+    VOCAL_GUIDE,
+    default_vocal,
+    vocal_options,
+    vocal_program,
+)
 
-ARRANGE_PROMPT_VERSION = "genre-arrangement-v1"
-ARRANGE_PROMPT = """You arrange an original instrumental band in the requested style.
+ARRANGE_PROMPT_VERSION = "genre-arrangement-v2"
+ARRANGE_PROMPT = (
+    """You arrange an original instrumental band in the requested style.
 Use what you know about how that style is really played: its usual groove, key and
 chord habits, tempo, energy, what the drums, bass and keyboard do, and the guitar and
 keyboard sounds. Choose only allowed values. Start from the typical recipe but adapt
@@ -47,8 +55,12 @@ walking/root/syncopated; keys comp/sustained/syncopated.
 Example for hard_rock: {"groove":"straight_eighth","harmony":"minor_1767","mode":"minor",
 "tonic":"E","bpm":138,"intensity":86,"density":0.78,"drums":"driving","bass":"root",
 "keys":"sustained","rhythm_guitar":"distorted","lead_guitar":"distorted",
-"keys_tone":"organ","pad":"strings","note":"失真强力和弦推八分，管风琴长音托底"}.
+"keys_tone":"organ","pad":"strings","vocal":"backing","note":"失真强力和弦推八分，管风琴长音托底"}.
+"""
+    + VOCAL_GUIDE
+    + """
 Output JSON only."""
+)
 
 TONICS = ("C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B")
 TEMPO: dict[Genre, tuple[int, int]] = {
@@ -143,6 +155,7 @@ class ArrangementChoice(FrozenModel):
     lead_guitar: Literal["distorted", "overdriven", "clean"]
     keys_tone: Literal["piano", "bright", "electric", "organ", "vibes"]
     pad: Literal["pad", "strings", "accordion", "brass"]
+    vocal: VocalRole
     note: str = Field(max_length=120)
 
     @classmethod
@@ -171,6 +184,7 @@ def context_for(genre: Genre, settings: MusicSettings) -> dict:
         "density_range": list(GUIDES[genre][1]),
         "rhythm_guitar_options": list(GUIDES[genre][2]),
         "lead_guitar_options": list(GUIDES[genre][3]),
+        "vocal_options": list(vocal_options(genre, settings.lineup)),
         "current": {
             "bpm": settings.bpm,
             "meter": settings.meter,
@@ -266,6 +280,14 @@ def materialize(
     if settings.lineup == "game":
         # The game band has no guitars; its sounds come from the style's game recipe.
         tracks = game_tones(genre)
+    allowed_vocals = vocal_options(genre, settings.lineup)
+    vocal = (
+        choice.vocal if choice.vocal in allowed_vocals else default_vocal(genre, settings.lineup)
+    )
+    if vocal != choice.vocal:
+        corrections.append(f"人声 {choice.vocal} 不适合该风格，改为 {vocal}")
+    plan = plan.model_copy(update={"vocal": vocal})
+    tracks["vocal"] = {"program": vocal_program(vocal, genre)}
     note = choice.note.strip()[:40]
     if sum("\u4e00" <= char <= "\u9fff" for char in note) < 4:
         # The model's reason was not a real sentence; describe what was actually chosen.

@@ -93,7 +93,7 @@ def test_song_export_carries_midi_tempo_and_meter_at_section_ticks(tmp_path):
         assert (start_b, "time_signature", 6) in changes
         assert (start_b, "set_tempo", bpm2tempo(132)) in changes
         assert pos == sum(s.bars * (2880 if s.meter != "4/4" else 3840) for s in song.sections)
-        assert len(midi.tracks) == 7
+        assert len(midi.tracks) == 8  # conductor + six players + voice
         assert sum(event.type == "note_on" for event in midi.tracks[5]) > 20
         assert client.delete(f"{path}/composition").raise_for_status().json()["section"] is None
 

@@ -13,6 +13,7 @@ from .music import (
     TrackSettings,
     active_tracks,
     section_volume,
+    slide_controls,
 )
 from .music import guitar_program as sounding_program
 
@@ -105,6 +106,7 @@ def export_midi(
                 bar += section.bars
         if not configuration.muted:
             guitar_program = program
+            sliding = False
             for plan in sorted(plans, key=lambda item: item.bar):
                 for note in plan.notes:
                     if note.track_id != track_id:
@@ -115,6 +117,13 @@ def export_midi(
                         if played_program != guitar_program:
                             events.append((tick, 2, played_program, 0))
                             guitar_program = played_program
+                    if note.slide_from is not None or sliding:
+                        # Sung slides become portamento, so DAWs glide like the console.
+                        events.extend(
+                            (tick, 1, control, value)
+                            for control, value in slide_controls(note.slide_from, note.slide_ms)
+                        )
+                        sliding = note.slide_from is not None
                     events.append((tick, 3, note.pitch, note.velocity))
                     events.append((tick + note.duration_ticks, 0, note.pitch, 0))
         previous_tick = 0

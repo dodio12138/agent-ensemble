@@ -35,6 +35,7 @@ BAND_LANES = (
     "brass",
     "melody",
     "chip",
+    "vocal",
 )
 LANES = (*BAND_LANES, "player")
 SYNTHS = (
@@ -61,6 +62,7 @@ EXTRA_VOICES = {
     "brass": "ae_lead_guitar",
     "melody": "ae_vibes",
     "chip": "ae_vibes",
+    "vocal": "ae_pad",
 }
 GUITAR_ARTICULATIONS = {"palm_mute": 1, "legato": 2, "harmonic": 3}
 KICKS = {35, 36}

@@ -87,7 +87,7 @@ def test_supercollider_failover_and_recovery_preserve_transport_and_held_keyboar
             lambda s: (
                 s["midi"]["sounding"] == [80]
                 and {event.get("track_id") for event in sc.events if event["type"] == "note_on"}
-                == {"drums", "bass", "piano"}
+                >= {"drums", "bass", "piano"}
             ),
         )
         assert not any(event["type"] == "midi_on" for event in native.events)

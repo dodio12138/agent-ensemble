@@ -67,6 +67,7 @@ ADDED_TRACK_VOLUMES = {
     "brass": 0.5,
     "melody": 0.7,
     "chip": 0.38,
+    "vocal": 0.6,
 }
 
 
@@ -1140,6 +1141,11 @@ class Scheduler:
             start_tick=note.start_tick,
             duration_ticks=note.duration_ticks,
             **({"articulation": note.articulation} if note.articulation != "normal" else {}),
+            **(
+                {"slide_from": note.slide_from, "slide_ms": note.slide_ms}
+                if kind == "note_on" and note.slide_from is not None
+                else {}
+            ),
         )
 
     def _dispatch(self, note: Note, action: int, due_ns: int, now: int) -> None:

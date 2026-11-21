@@ -4,7 +4,7 @@ import ctypes as c
 import os
 import sys
 
-from band.music import PLAYER_CHANNEL, TRACK_DEFINITIONS, guitar_program
+from band.music import PLAYER_CHANNEL, TRACK_DEFINITIONS, guitar_program, slide_controls
 
 NATIVE_LIBRARY = "libfluidsynth.dylib" if sys.platform == "darwin" else "libfluidsynth.so"
 
@@ -39,6 +39,7 @@ class FluidOutput:
         self.synth = self.driver = None
         self.programs: dict[int, int] = {}
         self.volumes: dict[int, int] = {}
+        self.sliding: set[int] = set()
         try:
             if not self.settings:
                 raise RuntimeError("FluidSynth could not allocate settings")
@@ -94,6 +95,13 @@ class FluidOutput:
                 raise RuntimeError(f"Missing SoundFont preset {bank}:{program}")
             self.programs[channel] = program
         self._volume(channel, event.get("volume", 1))
+        if event.get("slide_from") is not None or channel in self.sliding:
+            for control, value in slide_controls(event.get("slide_from"), event.get("slide_ms")):
+                self.library.fluid_synth_cc(self.synth, channel, control, value)
+            if event.get("slide_from") is None:
+                self.sliding.discard(channel)
+            else:
+                self.sliding.add(channel)
         self.library.fluid_synth_noteon(self.synth, channel, event["pitch"], event["velocity"])
 
     def _volume(self, channel: int, gain: float) -> None:

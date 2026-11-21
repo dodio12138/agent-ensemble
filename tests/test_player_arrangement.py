@@ -1,9 +1,17 @@
+from band.music import TRACKS
+
 """Musical responses to player phrases, independent of the MIDI device."""
 
 import asyncio
 from itertools import product
 
-from band.music import PPQ, TRACKS, GrooveTransition, MusicSettings, PlayerPhrase, validate_notes
+from band.music import (
+    PPQ,
+    GrooveTransition,
+    MusicSettings,
+    PlayerPhrase,
+    validate_notes,
+)
 from band.planner import Planner
 from band.transition import apply_transition
 
@@ -73,7 +81,7 @@ def test_player_responses_preserve_harmony_ranges_and_transition_metadata():
             phrase = PlayerPhrase(pitch_register=register, activity=activity, accent_tick=3 * PPQ)
             draft = await planner.plan(bar, song, 1, player_phrase=phrase)
             allowed = {(chord.root + interval) % 12 for interval in chord.intervals}
-            assert {part.track_id for part in draft.notes} == TRACKS.keys()
+            assert {part.track_id for part in draft.notes} - {"vocal"} == TRACKS.keys()
             assert validate_notes(bar, draft.notes) == draft.notes
             assert all(note.pitch % 12 in allowed | {chord.bass} for note in _part(draft, "bass"))
             assert all(note.pitch % 12 in allowed for note in _part(draft, "piano"))

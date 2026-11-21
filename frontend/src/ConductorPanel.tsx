@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { FileMusic, Send } from 'lucide-react'
 import {
-  CORE_TRACK_IDS, GENRE_NAMES, GROOVE_NAMES, SECTION_NAMES, TRACK_INFO, soloistFor,
+  CORE_TRACK_IDS, GENRE_NAMES, GROOVE_NAMES, SECTION_NAMES, TRACK_INFO, VOCAL_ROLE_NAMES, soloistFor,
   type ConductorPlan, type Genre, type HarmonicMove, type ImprovisedChorus, type ImprovisationPhrase,
   type JamPatch, type Lineup, type MusicProfile, type Song, type State,
 } from './model'
@@ -387,6 +387,12 @@ export function ConductorPanel({ state, disabled, conducting, improvising, compo
                     </dd>
                   </div>
                 ))}
+                {state.vocal_role && (
+                  <div>
+                    <dt style={{ color: TRACK_INFO.vocal.color }}>{TRACK_INFO.vocal.name}</dt>
+                    <dd>{VOCAL_ROLE_NAMES[state.vocal_role]}</dd>
+                  </div>
+                )}
               </dl>
             )}
           </section>

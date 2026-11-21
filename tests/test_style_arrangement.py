@@ -25,6 +25,7 @@ HARD_ROCK = {
     "lead_guitar": "distorted",
     "keys_tone": "organ",
     "pad": "strings",
+    "vocal": "backing",
     "note": "失真强力和弦配八分根音，管风琴铺底",
 }
 

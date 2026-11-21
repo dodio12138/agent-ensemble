@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Protocol
 
-from band.music import PLAYER_CHANNEL, TRACK_DEFINITIONS
+from band.music import PLAYER_CHANNEL, TRACK_DEFINITIONS, slide_controls
 
 PORT_NAME = "Agent Ensemble"
 # Logic Pro treats MIDI volume (CC7) 90 as 0 dB; 127 is about +6 dB. Map the band's
@@ -66,6 +66,7 @@ class MidiPortOutput:
         self.port = _acquire(name, factory)
         self.volumes: dict[int, int] = {}
         self.held: dict[int, set[int]] = {}
+        self.sliding: set[int] = set()
 
     def _send(self, *message: int) -> None:
         self.port.send_message(list(message))
@@ -85,6 +86,14 @@ class MidiPortOutput:
         held.add(pitch)
         self._send(0x90 | channel, pitch, max(1, min(127, velocity)))
 
+    def _slide(self, channel: int, event: dict) -> None:
+        slide_from = event.get("slide_from")
+        if slide_from is None and channel not in self.sliding:
+            return
+        for control, value in slide_controls(slide_from, event.get("slide_ms")):
+            self._send(0xB0 | channel, control, value)
+        (self.sliding.add if slide_from is not None else self.sliding.discard)(channel)
+
     def _off(self, channel: int, pitch: int) -> None:
         held = self.held.get(channel)
         if held is not None and pitch in held:
@@ -101,6 +110,7 @@ class MidiPortOutput:
         match event["type"]:
             case "note_on":
                 channel = CHANNELS[event["track_id"]]
+                self._slide(channel, event)
                 self._on(channel, event["pitch"], event["velocity"], event.get("volume"))
             case "note_off":
                 self._off(CHANNELS[event["track_id"]], event["pitch"])

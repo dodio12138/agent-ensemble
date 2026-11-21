@@ -36,6 +36,7 @@ from .music import (
     validate_notes,
 )
 from .negotiation import Negotiator, Participant
+from .vocals import vocal_role
 
 if TYPE_CHECKING:
     from .music import SongSection
@@ -1627,6 +1628,66 @@ class BrassAgent:
         )
 
 
+def _tune(
+    track: TrackId,
+    context: BarContext,
+    cell: tuple[tuple[int, int], ...],
+    center: int,
+    low: int,
+    high: int,
+    voice: str,
+) -> list[tuple[int, int, int, int]]:
+    """Write one bar of a recurring tune as (tick, duration, pitch, velocity).
+
+    The same contour comes back every phrase, which is what makes a tune stick; the
+    second phrase sits a little higher and bar four lands on the chord root.
+    """
+    settings = context.settings
+    phrase_bar = context.bar % 4
+    steps = settings.bar_ticks // SIXTEENTH
+    cell = tuple((start, min(length, steps - start)) for start, length in cell if start < steps)
+    if settings.density < 0.4 and len(cell) > 3:
+        cell = tuple(entry for entry in cell if entry[1] > 1) or cell
+    scale = _scale_classes(context)
+    ladder = [pitch for pitch in range(low, high + 1) if pitch % 12 in scale]
+    chord_tones = set(_chord_classes(context.chord))
+    contour_rng = random.Random(f"{settings.seed}:{voice}:{settings.genre}:{phrase_bar % 2}")
+    contour = [contour_rng.choice((-2, -1, -1, 1, 1, 2, 3, -3, 0)) for _ in range(len(cell))]
+    lift = (0, 2, 1, -1)[phrase_bar] + (2 if (context.bar // 4) % 2 else 0)
+    start_target = _in_register(context.chord.root, low, high, center)
+    index = min(range(len(ladder)), key=lambda i: abs(ladder[i] - start_target)) + lift
+    # Swung styles place the off-beat eighths late, like the rest of the band.
+    groove = _rhythm(context)
+    swung = groove in {"swing", "shuffle"} and settings.meter == "4/4"
+    offbeat = _offbeat(groove)
+
+    def place(step: int) -> int:
+        beat, rest = divmod(step, 4)
+        if swung and rest == 2:
+            return beat * PPQ + offbeat
+        return min(step * SIXTEENTH, settings.bar_ticks)
+
+    lines = []
+    for position, (start, length) in enumerate(cell):
+        index = max(0, min(len(ladder) - 1, index + (contour[position] if position else 0)))
+        pitch = ladder[index]
+        strong = start % 8 == 0 or length >= 4
+        if phrase_bar == 3 and position == len(cell) - 1:
+            pitch = _in_register(context.chord.root, low, high, pitch)
+        elif strong and pitch % 12 not in chord_tones:
+            pitch = min(
+                (p for p in ladder if p % 12 in chord_tones),
+                key=lambda p: (abs(p - pitch), p),
+                default=pitch,
+            )
+        index = min(range(len(ladder)), key=lambda i: abs(ladder[i] - pitch))
+        tick = place(start)
+        duration = place(start + length) - tick - 15
+        if duration > 0:
+            lines.append((tick, duration, pitch, 84 if position == 0 else 74))
+    return lines
+
+
 class ThemeAgent:
     """Carry the game's tune: a short motif that returns every four bars."""
 
@@ -1645,46 +1706,141 @@ class ThemeAgent:
         if parts.theme == "sparse" and (context.bar // 4) % 2:
             return AgentOutput("隔一个乐句再出现主题，留出空旷感", ())
         cell = _THEME_CELLS[parts.theme][(0, 1, 0, 2)[phrase_bar]]
-        steps = settings.bar_ticks // SIXTEENTH
-        cell = tuple((start, min(length, steps - start)) for start, length in cell if start < steps)
-        if settings.density < 0.4 and len(cell) > 3:
-            cell = tuple(entry for entry in cell if entry[1] > 1) or cell
         center = parts.theme_center
-        low, high = center - 12, min(center + 12, TRACK_DEFINITIONS["melody"].max_pitch)
-        scale = _scale_classes(context)
-        ladder = [pitch for pitch in range(low, high + 1) if pitch % 12 in scale]
-        chord_tones = set(_chord_classes(context.chord))
-        # The same contour every phrase is what makes the tune recognisable.
-        contour_rng = random.Random(f"{settings.seed}:theme:{settings.genre}:{phrase_bar % 2}")
-        contour = [contour_rng.choice((-2, -1, -1, 1, 1, 2, 3, -3, 0)) for _ in range(len(cell))]
-        lift = (0, 2, 1, -1)[phrase_bar] + (2 if (context.bar // 4) % 2 else 0)
-        start_target = _in_register(context.chord.root, low, high, center)
-        index = min(range(len(ladder)), key=lambda i: abs(ladder[i] - start_target)) + lift
-        notes = []
-        phrase = context.player_phrase
-        for position, (start, length) in enumerate(cell):
-            index = max(0, min(len(ladder) - 1, index + (contour[position] if position else 0)))
-            pitch = ladder[index]
-            strong = start % 8 == 0 or length >= 4
-            last = position == len(cell) - 1
-            if phrase_bar == 3 and last:
-                pitch = _in_register(context.chord.root, low, high, pitch)
-            elif strong and pitch % 12 not in chord_tones:
-                pitch = min(
-                    (p for p in ladder if p % 12 in chord_tones),
-                    key=lambda p: (abs(p - pitch), p),
-                    default=pitch,
-                )
-            index = min(range(len(ladder)), key=lambda i: abs(ladder[i] - pitch))
-            velocity = (84 if position == 0 else 74) - (12 if phrase else 0)
-            tick, duration = start * SIXTEENTH, length * SIXTEENTH - 15
-            notes.append(_note("melody", context, tick, duration, pitch, velocity))
+        high = min(center + 12, TRACK_DEFINITIONS["melody"].max_pitch)
+        softer = 12 if context.player_phrase else 0
+        notes = tuple(
+            _note("melody", context, tick, duration, pitch, velocity - softer)
+            for tick, duration, pitch, velocity in _tune(
+                "melody", context, cell, center, center - 12, high, "theme"
+            )
+        )
         intent = (
             "主题收束到主音"
             if phrase_bar == 3
             else "主题动机" + ("回应句" if phrase_bar == 1 else "")
         )
-        return AgentOutput(intent, tuple(notes))
+        return AgentOutput(intent, notes)
+
+
+# A singer phrases in breaths: each bar leaves room at its end.
+_VOCAL_CELLS: dict[str, tuple[tuple[tuple[int, int], ...], ...]] = {
+    "lead": (
+        ((0, 4), (4, 2), (6, 2), (8, 6)),
+        ((2, 2), (4, 4), (8, 4), (12, 2)),
+        ((0, 6), (6, 2), (8, 6)),
+    ),
+    "scat": (
+        ((0, 2), (2, 2), (4, 1), (6, 2), (8, 2), (10, 2), (12, 3)),
+        ((2, 2), (4, 2), (6, 2), (8, 1), (10, 2), (12, 2)),
+        ((0, 2), (2, 2), (4, 4), (8, 6)),
+    ),
+}
+
+
+def _sung(
+    context: BarContext, lines: list[tuple[int, int, int, int]], scat: bool
+) -> tuple[Note, ...]:
+    """Join sung notes the way a voice does: slides between them and runs into long notes.
+
+    With the voice's slides on, neighbouring notes are tied (no gap) and glide from
+    one pitch to the next; notes after a breath scoop up from just below; and, the
+    stronger the setting, the more long notes get a quick run (转音) from above.
+    """
+    settings = context.settings
+    if not settings.vocal_glide or settings.vocal_glide_amount <= 0:
+        return tuple(_note("vocal", context, *line) for line in lines)
+    amount = settings.vocal_glide_amount
+    rng = context.random_for("vocal")
+    scale = _scale_classes(context)
+    low, high = TRACK_DEFINITIONS["vocal"].min_pitch, TRACK_DEFINITIONS["vocal"].max_pitch
+    ladder = [pitch for pitch in range(low, high + 1) if pitch % 12 in scale]
+    run_step = SIXTEENTH // 2 if amount >= 0.6 else SIXTEENTH * 2 // 3
+    notes: list[Note] = []
+    previous: tuple[int, int, int] | None = None  # (tick, end, pitch) of the last note
+    for tick, duration, pitch, velocity in lines:
+        tied = previous is not None and tick - previous[1] <= SIXTEENTH
+        if tied and notes:
+            # Stretch the last note up to this one so the voice never stops between them.
+            last = notes[-1]
+            notes[-1] = last.model_copy(update={"duration_ticks": tick - last.start_tick})
+        slide_from = previous[2] if tied else None
+        slide_ms = round((25 + 60 * amount) if scat else (40 + 160 * amount))
+        if slide_from is None and not scat and rng.random() < 0.6 * amount:
+            slide_from = pitch - (2 if amount >= 0.6 else 1)  # scoop in from below
+            slide_ms = round(60 + 90 * amount)
+        run = (
+            not scat
+            and duration >= PPQ
+            and rng.random() < (amount - 0.25) * 1.3
+            and pitch in ladder
+            and ladder.index(pitch) + 2 < len(ladder)
+        )
+        if run:
+            upper = ladder[ladder.index(pitch) + 2], ladder[ladder.index(pitch) + 1]
+            for offset, ornament in enumerate(upper):
+                notes.append(
+                    _note(
+                        "vocal", context, tick + offset * run_step, run_step, ornament, velocity - 8
+                    ).model_copy(
+                        update={"slide_from": slide_from, "slide_ms": 35} if slide_from else {}
+                    )
+                )
+                slide_from = ornament
+            tick, duration = tick + 2 * run_step, duration - 2 * run_step
+            slide_ms = 45
+        note = _note("vocal", context, tick, duration, pitch, velocity)
+        if slide_from is not None and slide_from != pitch and low <= slide_from <= high:
+            note = note.model_copy(update={"slide_from": slide_from, "slide_ms": slide_ms})
+        notes.append(note)
+        previous = (tick, tick + duration, pitch)
+    return tuple(notes)
+
+
+class VocalAgent:
+    """A wordless voice: choir pads, a sung line, backing oohs or jazz scat."""
+
+    async def generate(self, context: BarContext) -> AgentOutput:
+        return self.arrange(context)
+
+    def arrange(self, context: BarContext) -> AgentOutput:
+        settings = context.settings
+        role = vocal_role(settings)
+        if role == "off":
+            return AgentOutput("人声这段不唱", ())
+        if _yields_to_player(context):
+            return AgentOutput("人声让出空间给现场演奏", ())
+        if context.section is not None and role in {"lead", "scat"}:
+            role = "backing"  # the song form gives its melody to the band's lead voice
+        chord = context.chord
+        bar = settings.bar_ticks
+        if role == "pad":
+            pitches = _voicing(chord, 55, 76, 64, 3)
+            if settings.conductor.intensity >= 70:
+                pitches = [_in_register(chord.root, 48, 55, 52), *pitches]
+            notes = tuple(_note("vocal", context, 0, bar, pitch, 46) for pitch in pitches)
+            return AgentOutput("合唱「啊」铺住和弦音", notes)
+        # A soloist sings one four-bar phrase, then steps back to answer the band.
+        if role in {"lead", "scat"} and (context.bar // 4) % 2 == 0:
+            phrase_bar = context.bar % 4
+            cell = _VOCAL_CELLS[role][(0, 1, 0, 2)[phrase_bar]]
+            center = 69 if role == "lead" else 67
+            lines = _tune("vocal", context, cell, center, 57, 79, f"vocal-{role}")
+            notes = _sung(context, lines, scat=role == "scat")
+            label = "领唱「喔」的旋律句" if role == "lead" else "拟声唱出摇摆八分的乐句"
+            return AgentOutput(label, notes)
+        if context.bar % 2 == 0:
+            return AgentOutput("伴唱等下一句句尾", ())
+        tick = bar // 2 if bar == BAR_TICKS else bar - settings.pulse_ticks
+        classes = _chord_classes(chord)
+        third, fifth = classes[1], classes[2] if len(classes) > 2 else classes[0]
+        low_pitch = _in_register(third, 60, 72, 64)
+        high_pitch = _in_register(fifth, low_pitch + 1, 77, low_pitch + 4)
+        notes = tuple(
+            _note("vocal", context, tick, bar - tick, pitch, 50)
+            for pitch in (low_pitch, high_pitch)
+        )
+        return AgentOutput("句尾和声伴唱「喔」", notes)
 
 
 class ChipAgent:
@@ -1749,6 +1905,7 @@ RULE_AGENTS = {
     "brass": BrassAgent(),
     "melody": ThemeAgent(),
     "chip": ChipAgent(),
+    "vocal": VocalAgent(),
 }
 
 

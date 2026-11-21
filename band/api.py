@@ -48,6 +48,8 @@ class SettingsPatch(BaseModel):
     collaboration: Collaboration | None = None
     lineup: Lineup | None = None
     meter: TimeSignature | None = None
+    vocal_glide: bool | None = None
+    vocal_glide_amount: float | None = Field(default=None, ge=0, le=1)
 
 
 class TrackPatch(BaseModel):

@@ -87,6 +87,7 @@ def test_late_or_invalid_remote_replies_fall_back_for_that_bar_only():
     assert {intent.track_id for intent in plan.intents if intent.status == "ready"} == {
         "drums",
         "piano",
+        "vocal",
     }
 
 

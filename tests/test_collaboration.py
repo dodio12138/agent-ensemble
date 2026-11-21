@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from test_engine import Clock
 
 from band.api import create_app
-from band.music import PPQ, TRACKS, ConductorPlan, MusicSettings
+from band.music import PPQ, TRACKS, ConductorPlan, MusicSettings, active_tracks
 from band.negotiation import BassNegotiator, Reply
 from band.planner import Planner
 from band.timing import Scheduler
@@ -106,9 +106,9 @@ def test_slow_peer_leaves_the_draft_playable_and_clock_running(tmp_path):
     log = (tmp_path / "sessions" / f"{initial['id']}.jsonl").read_text().splitlines()
     events = [json.loads(line) for line in log]
     for bar in (0, 1):
-        assert {
-            e["track_id"] for e in events if e["type"] == "note_on" and e["bar"] == bar
-        } == TRACKS.keys()
+        assert {e["track_id"] for e in events if e["type"] == "note_on" and e["bar"] == bar} == set(
+            active_tracks("trio")
+        )
     active = set()
     for event in events:
         if event["type"] == "note_on":
@@ -149,7 +149,8 @@ def test_musical_tempo_pivot_survives_missing_bar_plans():
             for event in events
             if event["type"] == "note_on" and event["bar"] == 2 and event["start_tick"] == 0
         ]
-        assert {note["track_id"] for note in landing} == TRACKS.keys()
+        # The voice may be resting in this bar; the instruments land together.
+        assert {note["track_id"] for note in landing} - {"vocal"} == TRACKS.keys()
     finally:
         scheduler.close()
 

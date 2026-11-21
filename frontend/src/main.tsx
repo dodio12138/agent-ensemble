@@ -2,7 +2,7 @@ import { createRoot } from 'react-dom/client'
 import { useEffect, useState, type CSSProperties } from 'react'
 import {
   Activity, AudioLines, ChevronsUpDown, CircleAlert, Download, Drum, FileMusic, Gamepad2, Guitar, KeyboardMusic, Link2,
-  ListMusic, Megaphone, MessagesSquare, Music, Music2, Pause, Piano, Play, Repeat2, Square, Volume2, VolumeX, Wand2,
+  ListMusic, Megaphone, MessagesSquare, Mic, Music, Music2, Pause, Piano, Play, Repeat2, Square, Volume2, VolumeX, Wand2,
   Waves, Zap,
   type LucideIcon,
 } from 'lucide-react'
@@ -41,10 +41,11 @@ const sounds: Record<TrackId, Record<number, string>> = {
   brass: { 60: '圆号', 61: '铜管组', 56: '小号', 57: '长号', 62: '合成铜管' },
   melody: { 73: '长笛', 75: '排箫', 71: '单簧管', 68: '双簧管', 60: '圆号', 56: '小号', 80: '方波 8-bit', 81: '锯齿波' },
   chip: { 80: '方波 8-bit', 81: '锯齿波', 8: '钢片琴', 9: '钟琴', 10: '八音盒', 11: '颤音琴', 46: '竖琴' },
+  vocal: { 53: '人声 · 喔', 52: '合唱 · 啊', 54: '合成人声' },
 }
 const icons = {
   drums: Drum, bass: Guitar, piano: Piano, rhythm_guitar: Guitar, lead_guitar: Zap, synth: Waves,
-  strings: Music2, brass: Megaphone, melody: Music, chip: Gamepad2,
+  strings: Music2, brass: Megaphone, melody: Music, chip: Gamepad2, vocal: Mic,
 }
 const defaultProgression = ['Dm7', 'G7', 'Cmaj7', 'Am7', 'Dm7', 'G7', 'Em7', 'A7']
 
@@ -547,6 +548,17 @@ function App() {
                     </select>
                     {hasSoundOptions && <ChevronsUpDown size={12} />}
                   </div>
+                  {track === 'vocal' && (
+                    <div className="glide" title="音与音之间的滑音、粘连和转音">
+                      <button type="button" aria-pressed={settings?.vocal_glide ?? true} disabled={busy}
+                        onClick={() => session.updateSettings({ vocal_glide: !(settings?.vocal_glide ?? true) })}>
+                        转音
+                      </button>
+                      <Range label="转音强度" value={settings?.vocal_glide_amount ?? 0.5}
+                        disabled={busy || !(settings?.vocal_glide ?? true)}
+                        onCommit={amount => session.updateSettings({ vocal_glide_amount: amount })} />
+                    </div>
+                  )}
                   <div className="channel-footer">
                     <span className={fallback ? 'fallback' : remote ? 'remote' : ''} title={status}><i />{status}</span>
                     <div className={`signal ${trackActive.has(track) ? 'live' : ''}`} aria-hidden="true">{Array.from({ length: 6 }, (_, index) => <i key={index} />)}</div>

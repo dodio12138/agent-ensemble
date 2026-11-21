@@ -46,7 +46,7 @@ def test_console_workflow_websocket_midi_and_audit(tmp_path):
         midi_response = client.get(f"{prefix}/export.mid")
         assert midi_response.status_code == 200
         midi = MidiFile(file=BytesIO(midi_response.content))
-        assert len(midi.tracks) == 4
+        assert len(midi.tracks) == 5  # conductor, drums, bass, piano, voice
         assert not any(message.type == "note_on" for message in midi.tracks[1])
     data = (tmp_path / "sessions" / f"{state['id']}.jsonl").read_text()
     assert '"type":"note_on"' in data

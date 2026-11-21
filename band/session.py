@@ -36,6 +36,7 @@ from band.remote_agents import RemoteAgent
 from band.song import project_song
 from band.style_arrangement import GUIDES, LEAD_TONES, RHYTHM_TONES
 from band.timing import Scheduler
+from band.vocals import default_vocal, vocal_program, vocal_role
 
 logger = logging.getLogger(__name__)
 CONDUCT_INTERVAL = 0.75
@@ -295,6 +296,8 @@ class Session:
             "link": self.link.snapshot(),
             "audio_device": getattr(self.output.audio.fallback, "device", None),
             "audio_routes": self.output.audio.routes,
+            # How the voice sings once queued changes land (the style's usual role if unset).
+            "vocal_role": vocal_role(self.scheduler.desired_configuration()[0]),
             "jam": self.jam.snapshot(),
             "remote_agents": {
                 track: agent.snapshot() for track, agent in self.remote_agents.items()
@@ -429,6 +432,11 @@ class Session:
         async with self.commands:
             current, _ = self.scheduler.desired_configuration()
             plan, progression = genre_preset(style, current.conductor)
+            # The voice takes the style's usual role and sound, e.g. scat for swing.
+            self.scheduler.stage_track(
+                "vocal",
+                {"program": vocal_program(default_vocal(style, current.lineup), style)},
+            )
             if current.lineup == "game":
                 # Game styles bring their sound: square waves for 8-bit, flute and harp
                 # for an RPG town, and they drop the layers the scene does not use.

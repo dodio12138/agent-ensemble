@@ -63,7 +63,7 @@ def test_lead_fills_sound_within_valid_score_and_respect_busy_player():
                 assert reply.intents == baseline.intents
                 assert reply.negotiation == baseline.negotiation
                 assert validate_notes(bar, reply.notes) == reply.notes
-                assert {note.track_id for note in reply.notes} == TRACKS.keys()
+                assert {note.track_id for note in reply.notes} - {"vocal"} == TRACKS.keys()
                 chord = projected.chord_at(bar)
                 # Solos may pass through any note, but what lands on a beat or is held
                 # must be a chord tone or a 9th / 13th colour.

@@ -6,7 +6,17 @@ from mido import MidiFile
 from pydantic import ValidationError
 
 from band.midi import export_midi
-from band.music import BAR_TICKS, PPQ, TRACKS, BarPlan, MusicSettings, Note, TrackSettings
+from band.music import (
+    BAR_TICKS,
+    PPQ,
+    TRACK_DEFINITIONS,
+    TRACKS,
+    BarPlan,
+    MusicSettings,
+    Note,
+    TrackSettings,
+    active_tracks,
+)
 from band.planner import AgentOutput, BassAgent, Planner
 from band.timing import Meter, Scheduler, TempoMap
 
@@ -87,8 +97,13 @@ def test_fault_is_confined_to_one_musician(bass, status):
     planner = Planner(agents={"bass": bass}, deadline=0.01)
     plan = asyncio.run(planner.plan(3, music, 2))
     assert plan.fallback_tracks == ("bass",)
-    assert tuple(decision.status for decision in plan.intents) == ("ready", status, "ready")
-    assert {note.track_id for note in plan.notes} == TRACKS.keys()
+    assert tuple(decision.status for decision in plan.intents) == (
+        "ready",
+        status,
+        "ready",
+        "ready",
+    )
+    assert {note.track_id for note in plan.notes} - {"vocal"} == TRACKS.keys()
     first_bass = next(note for note in plan.notes if note.track_id == "bass")
     assert first_bass.pitch % 12 == 7
 
@@ -97,7 +112,9 @@ def test_seed_reproduces_plans_and_arrangements_use_three_tracks():
     async def arrange(seed):
         planner = Planner()
         settings = MusicSettings(seed=seed)
-        tracks = {key: TrackSettings(program=track.program) for key, track in TRACKS.items()}
+        tracks = {
+            key: TrackSettings(program=track.program) for key, track in TRACK_DEFINITIONS.items()
+        }
         return export_midi(
             settings,
             tracks,
@@ -110,8 +127,9 @@ def test_seed_reproduces_plans_and_arrangements_use_three_tracks():
     midi = MidiFile(file=BytesIO(data))
     assert midi.type == 1
     assert midi.ticks_per_beat == PPQ
-    assert [track.name for track in midi.tracks] == ["Conductor", "Drums", "Bass", "Piano"]
-    for (track_id, definition), track in zip(TRACKS.items(), midi.tracks[1:], strict=True):
+    assert [track.name for track in midi.tracks] == ["Conductor", "Drums", "Bass", "Piano", "Voice"]
+    trio = [(track, TRACK_DEFINITIONS[track]) for track in ("drums", "bass", "piano", "vocal")]
+    for (track_id, definition), track in zip(trio, midi.tracks[1:], strict=True):
         active = set()
         for message in track:
             if message.type == "note_on":
@@ -200,7 +218,7 @@ def test_scheduler_survives_total_planning_outage_and_disabling_loop():
             event for event in events if event["type"] == "plan" and event["status"] == "locked"
         ]
         assert len(plans) == 8
-        assert all(set(event["fallback_tracks"]) == TRACKS.keys() for event in plans)
+        assert all(set(event["fallback_tracks"]) == set(active_tracks("trio")) for event in plans)
         assert any(event.get("reason") == "ended" for event in events)
     finally:
         scheduler.close()

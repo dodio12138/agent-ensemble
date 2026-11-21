@@ -1,6 +1,6 @@
 # Agent Ensemble
 
-在本机运行的多智能体虚拟乐队。鼓、贝斯、钢琴（或六轨现代乐队、七轨游戏配乐编制）各由一个独立的乐手 Agent 演奏，统一的调度器负责节拍、小节锁定和 MIDI 输出。Agent 决定演奏什么，调度器决定什么时候演奏。
+在本机运行的多智能体虚拟乐队。鼓、贝斯、钢琴（或六轨现代乐队、七轨游戏配乐编制，外加一个可滑音转音的无词人声）各由一个独立的乐手 Agent 演奏，统一的调度器负责节拍、小节锁定和 MIDI 输出。Agent 决定演奏什么，调度器决定什么时候演奏。
 
 ![CI](https://github.com/dodio12138/agent-ensemble/actions/workflows/ci.yml/badge.svg)
 

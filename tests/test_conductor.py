@@ -11,7 +11,7 @@ from pydantic import ValidationError
 
 from band.api import create_app
 from band.conductor import PROMPT_VERSION, Conductor, rule_plan
-from band.music import PPQ, TRACKS, ConductorPlan, MusicSettings
+from band.music import PPQ, TRACKS, ConductorPlan, MusicSettings, active_tracks
 from band.planner import Planner
 
 FUNK = ConductorPlan(
@@ -49,7 +49,7 @@ def test_genres_change_the_notes_and_intensity_changes_velocity():
             plan = ConductorPlan(style=kind)
             plans[kind] = await planner.plan(0, MusicSettings(conductor=plan), 1)
             fallback = planner.fallback(0, MusicSettings(conductor=plan), 1)
-            assert set(fallback.fallback_tracks) == TRACKS.keys()
+            assert set(fallback.fallback_tracks) == set(active_tracks("trio"))
         quiet = await planner.plan(0, MusicSettings(conductor=ConductorPlan(intensity=12)), 1)
         loud = await planner.plan(0, MusicSettings(conductor=ConductorPlan(intensity=92)), 1)
         return plans, quiet, loud

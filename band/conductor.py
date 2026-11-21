@@ -30,6 +30,7 @@ from band.music import (
     SongPlan,
     Style,
     TimeSignature,
+    VocalRole,
 )
 from band.phrase_generation import (
     GRID_STEPS,
@@ -159,6 +160,28 @@ _APPROACHES = {
 }
 
 
+# How a wordless singer is asked for in words. The last request in the text wins.
+_VOCAL_REQUESTS: dict[VocalRole, str] = {
+    "off": r"(?:不要|去掉|关掉|關掉|取消|别|別|不用)(?:用)?(?:人[声聲]|歌[声聲]|合唱|伴唱)"
+    r"|纯器乐|純器樂|人[声聲](?:休息|停下|关掉|關掉)|\b(?:instrumental|no vocals?)\b",
+    "pad": r"合唱|唱诗班|唱詩班|\bchoir\b|\baahs?\b",
+    "lead": r"领唱|領唱|主唱|哼唱|人[声聲]唱旋律|\blead vocals?\b",
+    "backing": r"伴唱|人[声聲]和[声聲]|\bbacking vocals?\b|\boohs?\b",
+    "scat": r"拟声|擬聲|\bscat\b",
+}
+
+
+def vocal_request(instruction: str) -> VocalRole | None:
+    text = unicodedata.normalize("NFKC", instruction).casefold()
+    found = [
+        (match.start(), role)
+        for role, pattern in _VOCAL_REQUESTS.items()
+        for match in re.finditer(pattern, text)
+        if role == "off" or _allowed(text, match.start())
+    ]
+    return max(found)[1] if found else None
+
+
 class ConductResult(FrozenModel):
     plan: ConductorPlan
     source: Literal["llm", "rules"]
@@ -272,6 +295,7 @@ def _is_performance_control(instruction: str) -> bool:
         or _DOWN.fullmatch(text)
         or _UP.fullmatch(text)
         or re.search(_STRENGTH, text)
+        or vocal_request(text)
     ):
         return True
     for clause in _ARRANGING_CLAUSES.split(text):
@@ -347,13 +371,16 @@ def rule_plan(
                     if re.search(pattern, direction):
                         approaches[track] = approach
                         break
+    restyled = matches and not keep_style
     return ConductorPlan.model_validate(
         {
             **current.model_dump(),
             **approaches,
             "style": style,
             "intensity": intensity,
-            "profile": None if matches and not keep_style else current.profile,
+            "profile": None if restyled else current.profile,
+            # A new style brings its usual singing unless the words ask for one.
+            "vocal": vocal_request(text) or (None if restyled else current.vocal),
         }
     )
 
@@ -412,7 +439,7 @@ class Conductor:
             base_url, model, api_key, phrase_generation=phrase_generation, json_mode=json_mode
         )
         self._active = False
-        self._legacy_fields = set(ConductorPlan.model_fields) - {"profile"}
+        self._legacy_fields = set(ConductorPlan.model_fields) - {"profile", "vocal"}
         schema = ConductorPlan.model_json_schema()
         self._schema = {
             "type": "object",
@@ -521,6 +548,18 @@ class Conductor:
         return ModelAttempt(model=self.model, attempts=attempts, reason=reason)
 
     async def propose(self, instruction: str, current: ConductorPlan) -> ConductResult:
+        result = await self._propose(instruction, current)
+        plan = result.plan
+        same_style = (plan.style, plan.profile and plan.profile.genre) == (
+            current.style,
+            current.profile and current.profile.genre,
+        )
+        vocal = vocal_request(instruction) or (current.vocal if same_style else None)
+        if plan.vocal != vocal:
+            result = result.model_copy(update={"plan": plan.model_copy(update={"vocal": vocal})})
+        return result
+
+    async def _propose(self, instruction: str, current: ConductorPlan) -> ConductResult:
         if _asks_for_exact_score(instruction):
             return ConductResult(plan=current, source="rules", reason="score_required")
         intent = style_intent(instruction)

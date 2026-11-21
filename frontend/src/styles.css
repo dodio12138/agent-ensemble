@@ -830,6 +830,19 @@ button.audio-toggle:hover { background: #2a2b2e; }
 }
 .program select:not(:disabled) { cursor: pointer; }
 .program svg { position: absolute; pointer-events: none; right: 5px; top: 6px; color: var(--muted); }
+.glide { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px; margin-top: 6px; }
+.glide button {
+  min-height: 22px;
+  padding: 1px 7px;
+  color: var(--muted);
+  background: var(--deep);
+  border: 1px solid #3e4041;
+  border-radius: 4px;
+  font-size: 10px;
+}
+.glide button[aria-pressed="true"] { color: var(--text); border-color: var(--accent); background: #2a2224; }
+.glide .range { min-width: 0; }
+
 /* Seven channels: drop the instrument icon so every name stays readable. */
 .mixer.dense .channel { padding: 9px 8px; }
 .mixer.dense .channel-title { grid-template-columns: minmax(0, 1fr) 26px; gap: 5px; }

@@ -15,8 +15,17 @@ CHORUS_BARS = 8
 PLAYER_CHANNEL = 2
 TrioTrackId = Literal["drums", "bass", "piano"]
 TrackId = Literal[
-    TrioTrackId, "rhythm_guitar", "lead_guitar", "synth", "strings", "brass", "melody", "chip"
+    TrioTrackId,
+    "rhythm_guitar",
+    "lead_guitar",
+    "synth",
+    "strings",
+    "brass",
+    "melody",
+    "chip",
+    "vocal",
 ]
+VocalRole = Literal["off", "pad", "lead", "backing", "scat"]
 Lineup = Literal["trio", "modern", "game"]
 TimeSignature = Literal["4/4", "3/4", "6/8"]
 TIME_SIGNATURES: dict[TimeSignature, tuple[int, int]] = {
@@ -120,13 +129,26 @@ TRACK_DEFINITIONS: MappingProxyType[TrackId, Track] = MappingProxyType(
         "brass": Track("Brass", 7, 60, 45, 79, 12),
         "melody": Track("Theme", 8, 73, 60, 96, 16),
         "chip": Track("Chip Arp", 10, 80, 48, 96, 32),
+        # A wordless voice that sings with every lineup.
+        "vocal": Track("Voice", 11, 53, 48, 84, 16),
     }
 )
 LINEUP_TRACKS: dict[Lineup, tuple[TrackId, ...]] = {
-    "trio": ("drums", "bass", "piano"),
-    "modern": ("drums", "bass", "piano", "rhythm_guitar", "lead_guitar", "synth"),
-    "game": ("drums", "bass", "piano", "strings", "brass", "melody", "chip"),
+    "trio": ("drums", "bass", "piano", "vocal"),
+    "modern": ("drums", "bass", "piano", "rhythm_guitar", "lead_guitar", "synth", "vocal"),
+    "game": ("drums", "bass", "piano", "strings", "brass", "melody", "chip", "vocal"),
 }
+
+
+def slide_controls(slide_from: int | None, slide_ms: int | None) -> tuple[tuple[int, int], ...]:
+    """MIDI portamento for a sung slide: on, its time in ms (14-bit), and the start note.
+
+    Sent before the note-on; a note without a slide turns portamento off again.
+    """
+    if slide_from is None:
+        return ((65, 0),)
+    time = max(0, min(16383, slide_ms or 80))
+    return ((65, 127), (5, time >> 7), (37, time & 127), (84, slide_from))
 
 
 def active_tracks(lineup: Lineup) -> tuple[TrackId, ...]:
@@ -256,6 +278,8 @@ class ConductorPlan(FrozenModel):
     bass: Literal["walking", "root", "syncopated"] = "walking"
     piano: Literal["comp", "sustained", "syncopated"] = "comp"
     profile: MusicProfile | None = Field(default=None, exclude_if=lambda profile: profile is None)
+    # None follows the style's usual way of using the voice.
+    vocal: VocalRole | None = Field(default=None, exclude_if=lambda role: role is None)
 
 
 class ImprovisationPhrase(FrozenModel):
@@ -390,6 +414,9 @@ class MusicSettings(FrozenModel):
     lineup: Lineup = "trio"
     meter: TimeSignature = "4/4"
     song: SongPlan | None = Field(default=None, exclude_if=lambda song: song is None)
+    # Sung slides and runs between notes (转音), and how strongly the voice uses them.
+    vocal_glide: bool = True
+    vocal_glide_amount: float = Field(default=0.5, ge=0, le=1)
 
     @property
     def meter_parts(self) -> tuple[int, int]:
@@ -447,6 +474,9 @@ class Note(FrozenModel):
     velocity: int = Field(ge=1, le=127)
     channel: int = Field(ge=0, le=15)
     articulation: Articulation = Field(default="normal", exclude_if=lambda value: value == "normal")
+    # A sung slide: start at this pitch and glide into the note over slide_ms.
+    slide_from: int | None = Field(default=None, ge=0, le=127, exclude_if=lambda v: v is None)
+    slide_ms: int | None = Field(default=None, ge=1, le=600, exclude_if=lambda v: v is None)
 
     @model_validator(mode="after")
     def validate_track_and_extent(self) -> Self:
