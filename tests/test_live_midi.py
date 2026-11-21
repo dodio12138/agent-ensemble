@@ -50,7 +50,14 @@ def until(api, prefix, predicate, timeout=4):
         if predicate(state):
             return state
         time.sleep(0.015)
-    raise AssertionError(f"Session state did not match: {state['midi']}")
+    responses = [
+        (plan["bar"], plan["player_response"] and plan["player_response"]["phrase"])
+        for plan in state["plans"]
+    ]
+    raise AssertionError(
+        f"Session state did not match at bar {state['bar']} ({state['transport']}): "
+        f"midi={state['midi']} plans={responses}"
+    )
 
 
 def test_monitor_works_while_stopped_and_releases_sustained_keys(tmp_path):
