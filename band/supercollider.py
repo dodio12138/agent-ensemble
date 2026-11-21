@@ -14,6 +14,8 @@ from pathlib import Path
 from threading import Event, Thread
 from time import monotonic
 
+from band.process_watchdog import release, watch
+
 logger = logging.getLogger(__name__)
 
 PROBE_INTERVAL = 0.10
@@ -171,6 +173,7 @@ class LocalSuperCollider:
                         start_new_session=True,
                     )
                     self._process = process
+                    watcher = watch(process.pid, "scsynth")
                     try:
                         self._kit_loaded = self._load_drum_kit(process)
                         while process.poll() is None and not self._stop.wait(0.10):
@@ -183,6 +186,7 @@ class LocalSuperCollider:
                             except subprocess.TimeoutExpired:
                                 process.kill()
                                 process.wait()
+                        release(watcher)
             except OSError:
                 logger.exception("Could not run local scsynth")
             finally:

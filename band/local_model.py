@@ -11,21 +11,13 @@ from contextlib import suppress
 from pathlib import Path
 
 from band.conductor import Conductor
+from band.process_watchdog import release, watch
 
 SERVER_VERSION = "b12242"
 MODEL_NAME = "qwen2.5-1.5b-instruct-q4_k_m"
 MODEL_REVISION = "91cad51"
 MODEL_ID = f"{MODEL_NAME}@{MODEL_REVISION}"
 logger = logging.getLogger(__name__)
-
-# Stops the model if the band process disappears without running close(), for example
-# after SIGKILL or a crash. It only signals a PID that is still this model server.
-WATCHDOG = """
-while kill -0 "$1" 2>/dev/null; do sleep 2; done
-case "$(ps -p "$2" -o command= 2>/dev/null)" in
-    *llama-server*) kill "$2" 2>/dev/null; sleep 4; kill -9 "$2" 2>/dev/null ;;
-esac
-"""
 
 
 class LocalModel:
@@ -90,30 +82,15 @@ class LocalModel:
                 )
             with suppress(OSError, AttributeError):
                 os.setpriority(os.PRIO_PROCESS, self.process.pid, 5)
-            self._watch(self.process.pid)
+            self.watchdog = watch(self.process.pid, "llama-server")
         except OSError:
             logger.exception("Local model startup failed. Rules remain available")
             return Conductor()
         return Conductor(f"http://127.0.0.1:{port}/v1", MODEL_ID, key, phrase_generation=True)
 
-    def _watch(self, child: int) -> None:
-        try:
-            self.watchdog = subprocess.Popen(
-                ["/bin/sh", "-c", WATCHDOG, "band-model-watchdog", str(os.getpid()), str(child)],
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
-        except OSError:
-            logger.warning("Could not start the model watchdog; close() still stops the model")
-
     def close(self) -> None:
-        if self.watchdog is not None:
-            with suppress(ProcessLookupError):
-                self.watchdog.kill()
-            self.watchdog.wait()
-            self.watchdog = None
+        release(self.watchdog)
+        self.watchdog = None
         if self.process is None:
             return
         with suppress(ProcessLookupError):
