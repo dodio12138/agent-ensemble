@@ -1,188 +1,53 @@
 # Agent Ensemble
 
-在本机运行的三重奏工作台。鼓、贝斯与钢琴各有独立的规则乐手。鼓组的节奏计划会交给贝斯，钢琴根据和弦、低音音域和节奏密度安排伴奏。后端统一掌管节拍、计划锁定与 MIDI 事件。
+在本机运行的多智能体虚拟乐队。鼓、贝斯、钢琴（或六轨现代乐队）各由一个独立的乐手 Agent 演奏，统一的调度器负责节拍、小节锁定和 MIDI 输出。Agent 决定演奏什么，调度器决定什么时候演奏。
 
-## 启动
+![CI](https://github.com/dodio12138/agent-ensemble/actions/workflows/ci.yml/badge.svg)
 
-macOS 可双击 `启动乐队.command`。也可从项目目录运行：
+## 功能
+
+- **乐手协作**：鼓、贝斯、钢琴提前两小节规划，可在独立、共享状态和显式协商三种模式间切换；某个乐手超时或出错时，该小节由规则兜底，演奏不中断。
+- **自然语言指挥**：本机 Qwen2.5-1.5B 理解风格、速度、拍号和编配指令，也能即兴变奏和编排整首器乐曲；模型不可用时退回本地规则。
+- **MIDI**：导出多轨 MIDI，播放本地 MIDI 文件，接入 USB MIDI 键盘让乐队跟随弹奏。
+- **音源**：浏览器 Web Audio（默认）、FluidSynth + GeneralUser GS，或 SuperCollider，断开时自动切换备用音源。
+- **同步与分布式**：Ableton Link 共享速度、小节相位和启停；外部进程可通过 WebSocket 接管任意一轨。
+- **低抖动调度**：原生 C 计时器，音符唤醒延迟 P99 约 0.7 ms。
+
+## 快速开始
+
+支持 macOS 和 glibc Linux（Intel / ARM），需要 Bash、curl、tar 和 shasum。首次运行会把工具链和依赖下载到项目目录内，之后可离线使用。
 
 ```sh
 ./scripts/run --open
 ```
 
-控制台默认打开 [127.0.0.1:8765](http://127.0.0.1:8765/)。首次启动下载所需工具及依赖。此后可离线启动和演奏。macOS 和 glibc Linux 的 Intel、ARM 机器可使用启动脚本，需要系统提供 Bash、curl、tar 和 shasum。
+浏览器打开 http://127.0.0.1:8765 后点「播放」。macOS 上也可以双击 `启动乐队.command`。
 
-- 工具链与缓存存放在 `.runtime/`，Python 包位于 `.venv/`，前端构建依赖位于 `frontend/node_modules/`。Python 与 Node 的依赖通过 `uv.lock` 和 `frontend/package-lock.json` 锁定。
-- `./scripts/setup` 可在更新源码后重新安装和构建。使用 `--port` 和 `--state-dir` 可并行启动各自独立的实例。
-- 浏览器默认负责发声，点击「播放」即可启用音频。关闭网页会释放浏览器音频，当前会话可在同一标签页刷新后恢复。重启后端会开启新会话。
-
-## 演奏与导出
-
-- 控制台显示八小节和弦、已规划音符、实际演奏、正在播放的位置与乐手状态。暂停后从当前小节开头重奏。取消循环后，在本轮第八小节结束时自动停止。
-- 停止期间的修改即时生效。演奏期间的 BPM、密度、和弦、音量、静音与音色切换在下一未锁定的小节边界生效。每个小节提前一拍锁定，控制台会显示待生效的小节。
-- 「导出 MIDI」按当前选择的设置和种子导出一轮完整八小节编排。文件为 960 PPQ、Type 1，包含速度与拍号轨及当前编制的分轨。静音轨保留轨道信息。
-- 「现代乐队」编制包含鼓、电贝斯、电钢琴、节奏电吉他、主奏电吉他和合成器铺底。节奏吉他按拍感补和弦重音，主奏吉他在乐句空位回应。MIDI 演奏密集时，主奏吉他和合成器让出空间。每轨有独立的音量与静音控制，切换编制时保留调音设置。播放中切换在下一可编辑小节生效。
-- 「原谱播放」读取本地 MIDI，按文件原有的音符、时序、速度变化和控制事件演奏。播放在浏览器内进行，使用项目的 GeneralUser GS 音色库。MIDI 文件留在浏览器。没有音色库时可通过 `./scripts/setup-native` 安装。
-- 命令行可通过本地 FastAPI 控制演奏，接口列在 [本机 OpenAPI 描述](http://127.0.0.1:8765/openapi.json)。每个会话的 JSONL 日志位于 `.runtime/data/sessions/`，含计划小节、提交与锁定时间、兜底原因以及音符目标与调度时间。
+可选组件：
 
 ```sh
-api=http://127.0.0.1:8765
-id=$(curl -fsS -X POST "$api/sessions" | .venv/bin/python -c 'import json,sys; print(json.load(sys.stdin)["id"])')
-curl -fsS -X POST "$api/sessions/$id/play" > /dev/null
-curl -fsS -X PATCH "$api/sessions/$id/settings" -H 'Content-Type: application/json' -d '{"bpm":132,"density":0.72}'
-curl -fsS -X POST "$api/sessions/$id/stop" > /dev/null
+./scripts/setup-llm            # 本地指挥模型（约 1.1 GB）
+./scripts/setup-native         # FluidSynth 与 GeneralUser GS 音色
+./scripts/setup-supercollider  # SuperCollider 音色（macOS）
 ```
 
-## FluidSynth 本机音频
+启动参数：`--native` 使用 FluidSynth，`--supercollider` 使用 SuperCollider，`--rules-only` 不加载模型，`--port` 和 `--state-dir` 可并行运行多个实例。
 
-```sh
-./scripts/setup-native
-./scripts/run --native --open
-```
+## 文档
 
-这会使用项目内的 FluidSynth 和 GeneralUser GS 音色库。音色许可随下载保存于 `soundfonts/GeneralUser-GS-LICENSE.txt`。可用 `--soundfont`、`--fluid-library` 和 `--audio-driver` 指定自己的音色库、库路径和音频驱动。默认浏览器音色使用 Web Audio 合成，FluidSynth 模式使用真正的 General MIDI 音色。详见 [GeneralUser GS 与许可](https://github.com/mrbumpy409/GeneralUser-GS/tree/684543d5e5efaef08d02be50dcda8d552478fa60/documentation)。
+- [使用指南](docs/guide.md)：控制台、指挥指令、即兴写法、MIDI 键盘、音源、Link、远程乐手和 API 示例
+- [开发设计](DEVELOPMENT.md)：架构、时间系统、Agent 设计与里程碑
 
-## 自然语言指挥
-
-实时指挥可接受「下一轮 108 BPM，6/8 拍」或「改三四拍华尔兹」。演奏中变速、变拍有小节过门，速度按四分音符计。6/8 每小节六个八分音符，按两大拍演奏。普通风格指令只改编配。
-
-```sh
-./scripts/setup-llm
-./scripts/run --open
-```
-
-首次安装额外下载约 1.12 GB 的模型。推理程序、权重和许可文件均位于 `.runtime/llm/`。启动器会自动启动项目专用的 loopback 推理进程。模型装好后，指挥与演奏都能离线运行。 [Qwen2.5 模型与许可](https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/tree/91cad51170dc346986eccefdc2dd33a9da36ead9)
-
-在「指挥」面板可输入「改成波萨诺瓦，强度 35%，钢琴用长和弦」或「换成放克，鼓更有冲劲」。强度调整 MIDI 音符力度，演奏密度控制节奏疏密。等待指挥时可照常播放、暂停和调参。编排通过校验后，在显示的小节生效。
-
-「星际穿越曲风」会应用电影配乐倾向，使用管风琴音色、反复动机和长低音。也可以描述混合风格和声音特征，例如「像慢速迷幻民谣，节奏拉松，低音保持长音」。模型把描述分解为流派、律动、调式和和声，乐手再把这些选择编成实际音符。支持电子、氛围、嘻哈、拉丁、乡村、古典和影视配乐等方向。
-
-模型未安装、超时、断连或结果无效时，指挥会尝试本地规则。规则可处理常见风格、强度和乐手指令。未匹配时保留原编排。可用 `./scripts/run --rules-only --open` 直接使用规则模式。指挥日志与演奏日志同目录，记录指令文本、提示词版本、模型版本、验证后的计划、尝试次数、兜底原因和目标小节。
-
-CLI 也可发送指挥指令。请求返回当前会话状态及最近一次指挥结果，API 的小节编号从 0 开始。
-
-```sh
-curl -fsS "$api/sessions/$id/conduct" -H 'Content-Type: application/json' \
-  -d '{"instruction":"改成放克，强度 80%"}'
-```
-
-也可显式设置 `ENSEMBLE_LLM_BASE_URL`（含 `/v1`）、`ENSEMBLE_LLM_MODEL` 和可选 `ENSEMBLE_LLM_API_KEY` 来使用支持 Chat Completions JSON Schema 的服务。外部服务只在配置后接收指挥文本和当前编排参数。
-
-### 风格、乐理与指挥即兴
-
-「指挥」提供摇摆爵士、波萨诺瓦、放克和抒情四个风格按钮。预设直接提交对应风格、强度和乐手分工。演奏中切换风格会安排过门。
-
-「发送指令」还支持输入摇滚、硬摇滚、另类摇滚、流行、布鲁斯、雷鬼、迪斯科与灵魂乐，或用乐队名称说明参考方向。指挥可以选用大小调、多利亚、混合利底亚、八小节布鲁斯等和声方向，按主音生成八小节主题，并给鼓、贝斯和钢琴安排相应的重拍、律动和触键。界面分别显示参考倾向、拍感、和声级数和当前主题的实际和弦。
-
-- 「E 调摇滚，用混合利底亚」可听到 I–♭VII–IV 与直八分摇滚律动。
-- 「F 多利亚，放克一点」可围绕 Fm7–Bb7 做切分伴奏。
-- 「雷鬼的 one-drop，和弦保持不变」可沿用手写主题，并让底鼓重心移到第三拍。
-
-乐队名称会被映射到适合三重奏演奏的风格倾向。规则模式可以识别常见流派、节奏和声术语及一部分参考名称。模型推断、规则识别和实际排谱均在项目的本地环境里运行。
-
-「来一轮即兴」可以使用输入框里的文字作为编排意图，例如「贝斯先答一句，留出空间，再回主题」。指挥按前后和弦筛选替换，考虑低音距离、共同音和属和弦的去向，每轮最多修改两个错开的小节。常规选项包括转位、保留根音的色彩变化和副属和弦。「反套路即兴」在合适的位置尝试一次小下属借用、欺骗式解决或三全音替代。比如主题中的 C–F–C 可以变成 C–Fm–C，A 降到 A♭，再走到 G。 [汪叔聊编曲 · 声部之间的和声与节奏](https://wangshubianqu.com/read/10/10-4) [段落连接与过渡设计](https://wangshubianqu.com/read/11/11-6)
-
-即兴从当前主题的和弦进入，按两小节交接领奏，八小节后回到主题。钢琴尽量在相邻和弦重复共同音高，让其他声部就近移动。贝斯在适合的拍感中用句尾音靠向下一和弦的指定低音。启用「自动即兴」会在播放中为后续乐句继续规划。界面显示采用的和弦、替换方法、领奏乐手和范围。模型超时或不可用时使用同一套本地编排规则。
-
-| 写法 | 编配依据 | 可输入的指令 |
-| --- | --- | --- |
-| 转位 | 和弦功能不变，指定更接近前后两小节的低音。斜杠右侧是实际低音。 | 用转位让低音更连贯 |
-| 共同音与加色 | 钢琴保留相邻和弦共有的音高。加九或挂留可在原根音上改变色彩。 | 来一轮轻一点的即兴 |
-| 副属 | 为紧接的目标和弦建立短暂的属功能。比如 A7 可以导向 Dm。 | 试一下副属和弦 |
-| 小下属借用 | 用同主音小调的 iv 回到大调 I。 | 用借用和弦做一点反套路 |
-| 欺骗式解决 | 属和弦先落到 vi，等主题的主和弦再回来。 | 用一次欺骗式解决 |
-| 三全音替代 | 在合适的属和弦位置保留关键的三全音，以半音低音进入目标。 | 试一次三全音替代 |
-
-将这些指令输入后点「来一轮即兴」。输入「保留原和弦」可只听领奏和伴奏的变化。转位与借用要看现有和弦的位置，具体小节会随主题而变。 [汪叔聊编曲 · 和弦转位](https://wangshubianqu.com/theory/43) [汪叔聊编曲 · 开源教材目录](https://wangshubianqu.com/read)
-
-本机 Qwen2.5 由 `.runtime/llm/llama-b12242/llama-server` 加载，权重位于 `.runtime/llm/qwen2.5-1.5b-instruct-q4_k_m.gguf`。默认本地进程使用 `127.0.0.1` 和每次启动时分配的端口。
-
-### 器乐歌曲与段落即兴
-
-在指挥框输入「E 大调流行摇滚器乐，主歌 4/4，副歌转成 6/8 和 132 BPM，尾声回 4/4，突出旋律」，然后点「编排整首」。本机 Qwen 先选曲式、和声、伴奏织体、键盘音色和混音重心，再按两小节一组同时写领奏的音高、起音、时值、留白和重音。它会参考前后和弦和前句旋律，小节长度与句尾和弦音由程序校验。三重奏由钢琴领奏，现代乐队由主奏吉他领奏。模型超时、不可用或乐句校验失败时，相应小节使用规则旋律。编排在后台进行，演奏可继续。拍号支持 4/4、3/4 和 6/8，速度和拍号会沿用到下一段，除非指令指定了变化或授权模型决定。
-
-歌曲中可按「来一轮即兴」，或开启自动即兴，在段落内变奏并在下一段恢复主题。密集的 MIDI 演奏会让领奏留出空间。关闭循环可完整演奏一次并在尾声后停止。全曲 MIDI 带各段实际速度、拍号、分轨和音量变化。歌词和人声留待后续。
-
-## 乐手协商与过门
-
-展开控制台的「乐手协商」可按小节查看提案、接受、拒绝和超时。鼓手向贝斯提出底鼓落点，贝斯请钢琴为低音起音让出空间，钢琴可请鼓组减少和弦附近的装饰音。每个回应只调整对应乐器的句法，和声、小节边界与时钟由原有调度器统一管理。回应过期时，该乐手沿用已生成的乐句，其他协商和演奏继续。协商由项目内的规则执行，消息也写入会话 JSONL。
-
-可用「协作模式」在独立演奏、共享状态和显式协商之间切换。三种模式使用同一拍号和和声。以下对照脚本固定八小节的种子、和弦和参数，统计底鼓和贝斯起音对齐数、邻近低音的钢琴落点，以及提案和接受数。
-
-```sh
-.venv/bin/python -m scripts.compare_collaboration
-```
-
-演奏或暂停时修改风格或 BPM，调度器留出一个可编排的过门小节，并标明新风格或速度的起拍小节。鼓以目标风格的末拍节奏引入，贝斯从旧和弦选一个能接向新低音的音，钢琴收短句尾，三轨在新小节的第一拍一起落下。转场写入演奏音符，适用于浏览器和 FluidSynth。 [Berklee 的脉冲与细分示例](https://online.berklee.edu/takenote/singers-heres-how-to-talk-to-your-band-about-grooves/)
-
-所有上述切换以 4/4 编排。当两档速度为精确的 3:2 或 2:3 时，过门鼓点会提前按新四分音符的时长落点。例如 120→180 BPM 时，两次鼓击和新小节的头一拍之间各约 333 毫秒。其他速度组合以末拍提示和下一小节的明确重拍交接。 [当代爵士演奏中的节奏调制](https://revuemusicaleoicrm.org/vol12-n2/meter-contemporary-jazz/)
-
-## MIDI 键盘即兴
-
-把 USB MIDI 键盘接入电脑，在控制台的「MIDI 键盘」面板选择输入设备。音符会在键盘图上点亮。设备连接后可直接试听，也可开始播放让乐队跟随。使用浏览器发声时，通过「启用监听」开启音频。监听音色和音量可以单独调节。
-
-打开「乐队跟随弹奏」后，乐手会参考最近一小节内的音区、起音密度、重音位置和力度。密集乐句会让鼓减少装饰音、贝斯简化节奏、钢琴缩短并错开音区。稀疏乐句可以获得短答句。伴奏按当前和弦生成，在下一可用小节响应。面板会显示各轨响应和实际生效小节，键盘声部即时发声。
-
-输入设备由项目内的 RtMidi 监听。键盘拔出时释放该声部的所有按键和持续音，乐队照常演奏。相同的设备端口恢复后自动重连。延音踏板（CC64）和全音符释放控制也适用于实时监听。macOS 使用 CoreMIDI，Linux 使用系统可用的 ALSA MIDI 后端。 [RtMidi 输入后端](https://mido.readthedocs.io/en/stable/backends/rtmidi.html)
-
-现有的 MIDI 导出按会话参数生成乐队编排。即兴输入和乐手响应可在会话 JSONL 中查阅。
-
-## SuperCollider 音色
-
-在 macOS 上从项目目录运行：
-
-```sh
-./scripts/setup-supercollider
-./scripts/run --supercollider --open
-```
-
-安装脚本把 SuperCollider、插件、编译后的 SynthDef 和运行配置放在 `.runtime/supercollider/`。控制台通过项目专用的本地 OSC 端口使用它。鼓组、贝斯、钢琴和键盘监听使用同一音频引擎，各自保留音量和音符释放。键盘音色可以在面板中选择。 [SuperCollider 音频服务器命令](https://doc.sccode.org/Reference/Server-Command-Reference.html)
-
-已有本地 GeneralUser GS 和 FluidSynth 时，安装脚本也会生成双力度层立体声房间鼓组。踩镲闭合会收掉开镲的余音。现代乐队按乐句决定幽灵音、鼓过门与起拍镲。节奏吉他会按弦错开上下扫并在适当的反拍闷音。主奏吉他按相邻音距离使用连奏，句尾可用模拟泛音。导出 MIDI 保留逐弦起音、连音时值和对应的 GM 闷音／泛音换色。
-
-现代乐队「合成器」轨可切换暖色 Pad 与弦乐合奏。后者使用分散起伏的弓弦起音及逐步加入的轻微揉弦，MIDI 导出对应 GM 弦乐合奏音色。
-
-`--supercollider` 会在进程退出或失去响应时自动切到浏览器音频。若已安装项目内的 FluidSynth，可运行 `./scripts/run --supercollider --native --open`，让 FluidSynth 在后台接手。浏览器备用音源会在点击播放、选择 MIDI 输入或启用音频时预备。切换在音频输出层进行。仍在发声的钢琴、贝斯和键盘持续音会在新引擎重新触发，后续音符沿原来的节拍继续。SuperCollider 恢复后会重新加载项目音色，并自动切回。
-
-右上角显示当前音源和备用状态。会话日志记录 `audio_route` 切换，SuperCollider 进程日志保存在相同数据目录的 `scsynth.log`。
-
-## 同步、分布式乐手与调度精度
-
-控制台右侧的工具栏分为「指挥」「键盘」「原谱」「协商」「同步」五页，左侧固定显示和弦、钢琴卷帘和调音台。宽屏下整页放进一个窗口，钢琴卷帘随窗口高度伸缩，工具页在栏内单独滚动；窄屏时工具栏排在乐谱下方。
-
-### Ableton Link
-
-在「同步」页打开 Ableton Link，乐队会加入同一网络中的 Link 会话，与 Ableton Live、Bitwig 或手机应用共享速度和小节相位。
-
-- 加入后按播放，乐队等到共享的小节起点再开始。小节长度按拍号换算成四分音符，6/8 为 3 拍。
-- 其他应用改速度时，乐队按现有规则在下一可编辑小节过门后换速。在本机改 BPM 会同步给其他应用。整首歌曲由段落掌管速度，此时只对外发布、不接收。
-- 演奏中每个小节对齐一次相位。小偏差每小节最多校正 20 ms，速度或拍号交接期间暂不校正，交接完成后对齐到共享的下一个小节起点。
-- 勾选「同步启停」后，其他应用开始或停止播放时乐队跟着开始或暂停，反之亦然。
-
-Link 通过 [aalink](https://github.com/artfwo/aalink)（GPLv3+）接入，随 `./scripts/setup` 安装。
-
-### 分布式乐手
-
-另一个进程可以通过 WebSocket 接管任意一轨，也可以用其他语言实现。示例脚本会以琶音演奏指定轨道：
-
-```sh
-.venv/bin/python -m scripts.remote_agent --track bass
-```
-
-不带 `--session` 时，脚本优先加入控制台正在打开的会话。「同步」页会显示带当前会话 ID 的完整命令。协议见 [scripts/remote_agent.py](scripts/remote_agent.py)：服务器为每个小节发送 `plan` 请求，包含和弦、前后和弦、拍号、密度、风格和已生成的鼓与贝斯信息，远程进程回复以小节内 tick 计的音符。每个小节有回复时限（默认 300 ms，可在 hello 中设定 40–1000 ms）。回复迟到、音符越界或连接断开时，该小节由本机规则乐手补上，时钟和其他乐手不受影响。同一轨同时只接受一个远程乐手，断开后自动交还本机。
-
-### 原生计时
-
-调度线程在每个事件前约 3 ms 把等待交给 `native/precise_timer.c`：先用内核绝对定时器睡到截止前，最后一小段自旋等待。macOS 上该线程申请实时（time-constraint）优先级，Linux 尝试 `SCHED_FIFO`。C 文件在首次启动或 `./scripts/setup` 时用系统编译器编译到 `.runtime/native/`。没有编译器时自动沿用 Python 等待。设置 `ENSEMBLE_PYTHON_TIMER=1` 可强制使用 Python 等待做对照。「同步」页显示最近音符的唤醒延迟中位数、P99 和最大值。
-
-## 验证
+## 开发
 
 ```sh
 .venv/bin/ruff check band scripts tests
 .venv/bin/pytest
-.venv/bin/python -m scripts.demo export ensemble.mid
-.venv/bin/python -m scripts.demo chord
-.venv/bin/python -m scripts.verify_soak --state-dir .runtime/acceptance
+.venv/bin/python -m scripts.verify_soak --seconds 600   # 十分钟连续演奏测试
 ```
 
-连续演奏脚本默认运行十分钟，对贝斯注入超时和异常，检查节拍、兜底和音符释放配对，并报告实测调度延迟。M5 测试覆盖协商超时和过门。M6 测试覆盖 MIDI 即兴、音色引擎切换和持续音恢复。项目设计见 [DEVELOPMENT.md](DEVELOPMENT.md)。当前实现覆盖 M0–M5，以及 M6 中除新音乐生成模型外的部分：MIDI 键盘即兴、SuperCollider 音色、原生低抖动计时、Ableton Link 与分布式乐手。
+后端是 Python 3.12 + FastAPI（`band/`），控制台是 React + Vite（`frontend/`）。
+
+## 第三方组件
+
+GeneralUser GS 音色、Qwen2.5 模型权重、SuperCollider 和 Ableton Link（经 [aalink](https://github.com/artfwo/aalink)，GPLv3+）各自遵循其许可，由安装脚本下载，不包含在本仓库中。
