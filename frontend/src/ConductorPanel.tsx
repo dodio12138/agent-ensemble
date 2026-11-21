@@ -17,6 +17,7 @@ const reasons: Record<string, string> = {
   unrecognized_reference: '未能把这条参考转成可演奏的风格。可补充乐器、节奏或和声特征。',
   busy: '模型正忙',
   timeout: '模型超时',
+  not_configured: '未加载本地模型',
   unavailable: '模型暂时不可用',
   invalid_response: '模型计划未通过校验',
   rejected: '模型请求被拒绝',
@@ -132,6 +133,11 @@ function ChorusPreview({ chorus, currentBar, transport }: { chorus: ImprovisedCh
         <span className={chorus.source === 'llm' ? 'conductor-llm' : 'conductor-rules'} title={chorus.model ?? undefined}>
           {chorus.source === 'llm' ? 'LLM 指挥' : '本地规则'}
         </span>
+        {chorus.source !== 'llm' && chorus.reason && reasons[chorus.reason] && (
+          <span className="conductor-reason" title={chorus.reason === 'timeout' ? '电脑负载较高时，本地模型可能来不及在 24 秒内完成' : undefined}>
+            {reasons[chorus.reason]}
+          </span>
+        )}
       </header>
       <ol className="chorus-chords" aria-label="即兴和弦">
         {progression.map((chord, index) => (
