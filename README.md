@@ -9,7 +9,7 @@
 - **乐手协作**：鼓、贝斯、钢琴提前两小节规划，可在独立、共享状态和显式协商三种模式间切换；某个乐手超时或出错时，该小节由规则兜底，演奏不中断。
 - **自然语言指挥**：本机 Qwen2.5-1.5B 理解风格、速度、拍号和编配指令，也能即兴变奏和编排整首器乐曲；模型不可用时退回本地规则。
 - **MIDI**：导出多轨 MIDI，播放本地 MIDI 文件，接入 USB MIDI 键盘让乐队跟随弹奏。
-- **音源**：浏览器 Web Audio（默认）、FluidSynth + GeneralUser GS，或 SuperCollider，断开时自动切换备用音源。
+- **音源**：浏览器 Web Audio（默认）、FluidSynth + GeneralUser GS、SuperCollider，或经虚拟 MIDI 端口用 Logic Pro 的乐器发声（`--logic`）。
 - **同步与分布式**：Ableton Link 共享速度、小节相位和启停；外部进程可通过 WebSocket 接管任意一轨。
 - **低抖动调度**：原生 C 计时器，音符唤醒延迟 P99 约 0.7 ms。
 
@@ -31,7 +31,7 @@
 ./scripts/setup-supercollider  # SuperCollider 音色（macOS）
 ```
 
-启动参数：`--native` 使用 FluidSynth，`--supercollider` 使用 SuperCollider，`--rules-only` 不加载模型，`--port` 和 `--state-dir` 可并行运行多个实例。
+启动参数：`--logic` 用 Logic Pro 发声（设置见[使用指南](docs/guide.md#用-logic-pro-发声)），`--native` 使用 FluidSynth，`--supercollider` 使用 SuperCollider，`--rules-only` 不加载模型，`--port` 和 `--state-dir` 可并行运行多个实例。
 
 ## 文档
 

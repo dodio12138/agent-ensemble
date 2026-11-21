@@ -33,6 +33,34 @@ curl -fsS -X PATCH "$api/sessions/$id/settings" -H 'Content-Type: application/js
 curl -fsS -X POST "$api/sessions/$id/stop" > /dev/null
 ```
 
+## 用 Logic Pro 发声
+
+```sh
+./scripts/run --logic --open
+```
+
+乐队会打开一个名为「Agent Ensemble」的虚拟 MIDI 端口，每位乐手走自己的通道，由 Logic 的乐器发声。调度、指挥和即兴不变，速度由乐队掌管。不发送音色切换，音色在 Logic 里选。
+
+| 乐手 | MIDI 通道 |
+| --- | --- |
+| 键盘 | 1 |
+| 贝斯 | 2 |
+| MIDI 键盘监听 | 3 |
+| 节奏吉他 | 4 |
+| 主奏吉他 | 5 |
+| 合成器 / 手风琴 | 6 |
+| 鼓 | 10 |
+
+在 Logic Pro 中设置一次：
+
+1. 新建项目，创建 6 条「软件乐器」轨道。
+2. 选中每条轨道，在检查器的「轨道」区把「MIDI 输入」设为 Agent Ensemble，「MIDI 输入通道」设为上表中的通道。
+3. 为每条轨道在资源库中选择音色，例如鼓用 Drum Kit Designer，贝斯用 Studio Bass。
+4. 打开每条轨道的「I」（输入监视），未选中的轨道也会跟着乐队发声。
+5. 「文件 › 存储为模板…」，之后在「我的模板」中直接打开。
+
+库乐队同一时间只让一条轨道接收外部 MIDI，不适合整支乐队。
+
 ## FluidSynth 本机音频
 
 ```sh

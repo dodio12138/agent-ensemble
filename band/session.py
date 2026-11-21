@@ -33,6 +33,7 @@ from band.planner import Planner
 from band.precise_timer import load as load_precise_timer
 from band.remote_agents import RemoteAgent
 from band.song import project_song
+from band.style_arrangement import GUIDES, LEAD_TONES, RHYTHM_TONES
 from band.timing import Scheduler
 
 logger = logging.getLogger(__name__)
@@ -287,6 +288,7 @@ class Session:
             },
             "midi": self.midi.snapshot(),
             "link": self.link.snapshot(),
+            "audio_device": getattr(self.output.audio.fallback, "device", None),
             "jam": self.jam.snapshot(),
             "remote_agents": {
                 track: agent.snapshot() for track, agent in self.remote_agents.items()
@@ -421,6 +423,10 @@ class Session:
         async with self.commands:
             current, _ = self.scheduler.desired_configuration()
             plan, progression = genre_preset(style, current.conductor)
+            # The style's usual guitar sounds come with it, e.g. driven guitars for rock.
+            _, _, rhythm_tones, lead_tones = GUIDES[style]
+            self.scheduler.stage_track("rhythm_guitar", {"program": RHYTHM_TONES[rhythm_tones[0]]})
+            self.scheduler.stage_track("lead_guitar", {"program": LEAD_TONES[lead_tones[0]]})
             state = await self._apply_conductor(
                 plan,
                 {

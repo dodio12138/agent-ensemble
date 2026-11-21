@@ -36,7 +36,7 @@ export function AudioRoute({ state, ready, audible, toggle }: {
       <span className="audio-toggle" role="status">
         <Volume2 size={17} aria-hidden="true" />
         <span className="audio-label">
-          <span>{onFallback ? '备用 · FluidSynth' : '设备音频'}</span>
+          <span>{state?.audio_device === 'logic' ? 'Logic Pro' : onFallback ? '备用 · FluidSynth' : '设备音频'}</span>
           {indicator && <small>{indicator}</small>}
         </span>
       </span>

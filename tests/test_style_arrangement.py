@@ -122,3 +122,20 @@ def test_rules_keep_style_typical_tones_and_explain_when_the_model_does_not():
     ballad = materialize("ballad", gentle, MusicSettings())
     assert ballad.plan.intensity == 50 and ballad.density == 0.5
     assert ballad.tracks["lead_guitar"]["program"] == 27  # clean
+
+
+def test_style_click_brings_its_guitar_sounds_and_driven_mutes_keep_their_drive(tmp_path):
+    from band.music import guitar_program
+
+    with TestClient(create_app(tmp_path), base_url="http://127.0.0.1") as client:
+        sid = client.post("/sessions", json={"lineup": "modern"}).json()["id"]
+        rock = client.post(f"/sessions/{sid}/preset", json={"style": "hard_rock"}).json()
+        assert rock["tracks"]["rhythm_guitar"]["program"] == 29
+        assert rock["tracks"]["lead_guitar"]["program"] == 30
+        jazz = client.post(f"/sessions/{sid}/preset", json={"style": "swing"}).json()
+        assert jazz["tracks"]["rhythm_guitar"]["program"] == 27
+    assert guitar_program(29, "palm_mute") == 29  # a driven chug, not a plucked mute
+    assert guitar_program(30, "palm_mute") == 30
+    assert guitar_program(27, "palm_mute") == 28
+    assert guitar_program(30, "harmonic") == 31
+    assert guitar_program(30, "legato") == 30

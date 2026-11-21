@@ -4,7 +4,7 @@
     {
       "name": "ensemble",
       "runtimeExecutable": ".venv/bin/python",
-      "runtimeArgs": ["-m", "band", "--native", "--port", "8790", "--state-dir", ".runtime/data-dev"],
+      "runtimeArgs": ["-m", "band", "--logic", "--port", "8790", "--state-dir", ".runtime/data-dev"],
       "port": 8790
     }
   ]

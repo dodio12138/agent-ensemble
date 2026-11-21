@@ -13,6 +13,7 @@ import uvicorn
 from band.api import ROOT, create_app
 from band.conductor import Conductor
 from band.local_model import LocalModel
+from band.midi_output import MidiPortOutput
 from band.native import NATIVE_LIBRARY, FluidOutput
 from band.process_watchdog import sweep
 from band.supercollider import LocalSuperCollider, SuperColliderOutput
@@ -42,9 +43,19 @@ def main() -> None:
     parser.add_argument(
         "--rules-only", action="store_true", help="Use only built-in conducting rules"
     )
+    parser.add_argument(
+        "--logic",
+        action="store_true",
+        help="Play through Logic Pro (or any app) via the 'Agent Ensemble' virtual MIDI port",
+    )
     args = parser.parse_args()
     audio_factory = None
-    if args.native:
+    if args.logic:
+
+        def audio_factory() -> MidiPortOutput:
+            return MidiPortOutput()
+
+    elif args.native:
         if not args.soundfont.is_file():
             parser.error(f"SoundFont missing: {args.soundfont}. Run scripts/setup-native first.")
 
