@@ -361,6 +361,7 @@ export interface State {
   audio_fallback?: AudioOutput
   audio_reason?: string | null
   audio_device?: 'logic' | 'fluidsynth' | null
+  audio_routes?: AudioOutput[]
   audio_active?: BandEvent[]
   locked_until_bar?: number
   state_version?: number

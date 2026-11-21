@@ -369,6 +369,10 @@ class Scheduler:
             if event.get("track_id") != "drums"
         ]
 
+    def prefer_audio(self, route: AudioSource) -> None:
+        with self._condition:
+            self._audio_preferred = route
+
     def switch_audio(self, route: AudioSource, reason: str | None) -> None:
         """Record a source boundary with exactly the notes that are still sounding."""
         with self._condition:

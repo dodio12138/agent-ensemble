@@ -1008,13 +1008,22 @@ class PianoAgent:
                 player_intent = f"{register_intent}，用轻奏导音答句"
             velocity = 59 if phrase.velocity == "strong" else 54
         if _rock_band(context) and phrase is None and context.section is None:
-            hold = PPQ * 2 - EIGHTH // 2
-            starts = ((0, hold), (2 * PPQ, hold)) if density >= 0.6 else ((0, BAR_TICKS - EIGHTH),)
+            if _rock_opened(context):
+                # The lift: sustained chords join the ringing guitars.
+                hold = PPQ * 2 - EIGHTH // 2
+                starts = ((0, hold), (2 * PPQ, hold))
+                intent = "副歌放开，长音和弦和吉他一起铺满"
+            else:
+                # The verse: short organ stabs leave room for the guitar's chug.
+                stab = EIGHTH - 30
+                starts = ((0, stab), (PPQ + EIGHTH, stab), (3 * PPQ, PPQ - 30))
+                if density < 0.45:
+                    starts = ((0, stab), (3 * PPQ, PPQ - 30))
+                intent = "主歌短促和弦重音：第一拍、二拍后半，第四拍稍长"
             pitches = sorted(
                 {_in_register(chord.root + tone, 60, 76, 67) for tone in chord.intervals[:3]}
             )
-            velocity = 58
-            intent = "长音三和弦托在吉他上方，不与吉他抢节奏"
+            velocity = 62
         elif context.voice_leading:
             pitches = _connected_piano(context, guide_tones, low, high, center, open_fifth)
             intent += "，换和弦时保留邻近声部"

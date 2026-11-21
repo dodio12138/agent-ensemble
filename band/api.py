@@ -14,7 +14,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from band.audio_routing import SuperColliderSink
+from band.agents import AgentId, ConductorAgents, endpoint_of
+from band.audio_routing import AudioSource, SuperColliderSink
 from band.conductor import Conductor
 from band.live_midi import MidiFactory
 from band.midi_input import MidiInput
@@ -98,6 +99,28 @@ class RemoteHello(BaseModel):
     deadline_ms: int = Field(default=round(REMOTE_DEADLINE * 1000), ge=40, le=1000)
 
 
+class AudioChoice(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    output: AudioSource
+
+
+class AgentChoice(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: AgentId
+
+
+class CloudSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider: str = Field(min_length=1, max_length=32)
+    base_url: str | None = Field(default=None, max_length=256)
+    model: str | None = Field(default=None, max_length=160)
+    # Left empty to keep the saved key. Never returned by any endpoint.
+    api_key: str | None = Field(default=None, max_length=512)
+
+
 class MidiPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -114,13 +137,17 @@ def create_app(
     planner_factory: Callable[[], Planner] = Planner,
     audio_factory: Callable[[], FluidOutput] | None = None,
     conductor: Conductor | None = None,
+    agents: ConductorAgents | None = None,
     midi_factory: MidiFactory = MidiInput,
     sc_factory: Callable[[], SuperColliderSink] | None = None,
     prefer_sc: bool = False,
 ) -> FastAPI:
     sessions: dict[str, Session] = {}
     created: dict[str, float] = {}
-    conductor = conductor or Conductor()
+    conductor = agents.conductor if agents else conductor or Conductor()
+    agents = agents or ConductorAgents(
+        conductor, state_dir / "agents", local=endpoint_of(conductor)
+    )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -141,7 +168,7 @@ def create_app(
     async def verify_control_origin(request: Request, call_next: Callable) -> Response:
         origin = request.headers.get("origin")
         if (
-            request.method in {"POST", "PATCH"}
+            request.method in {"POST", "PATCH", "PUT", "DELETE"}
             and origin
             and origin != str(request.base_url).rstrip("/")
         ):
@@ -157,6 +184,32 @@ def create_app(
     @app.get("/health")
     def health() -> dict:
         return {"status": "ok"}
+
+    @app.get("/conductor/agents")
+    def conductor_agents() -> dict:
+        return agents.describe()
+
+    @app.patch("/conductor/agents")
+    def choose_agent(choice: AgentChoice) -> dict:
+        try:
+            agents.choose(choice.id)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return agents.describe()
+
+    @app.put("/conductor/cloud")
+    def save_cloud(settings: CloudSettings) -> dict:
+        try:
+            agents.save_cloud(
+                settings.provider, settings.base_url, settings.model, settings.api_key
+            )
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        return agents.describe()
+
+    @app.post("/conductor/cloud/test")
+    async def test_cloud() -> dict:
+        return await agents.test_cloud()
 
     @app.post("/sessions", status_code=201)
     async def create_session(config: MusicSettings | None = None) -> dict:
@@ -194,6 +247,17 @@ def create_app(
             }
             for session_id in order
         ]
+
+    @app.patch("/sessions/{session_id}/audio")
+    async def choose_audio(session_id: str, choice: AudioChoice) -> dict:
+        """Switch between browser sound, Logic/FluidSynth and SuperCollider while playing."""
+        session = get_session(session_id)
+        async with session.commands:
+            try:
+                session.choose_audio(choice.output)
+            except ValueError as exc:
+                raise HTTPException(409, str(exc)) from exc
+        return session.snapshot()
 
     @app.patch("/sessions/{session_id}/jam")
     async def configure_jam(session_id: str, patch: JamPatch) -> dict:

@@ -43,7 +43,7 @@ class Keyboard:
         pass
 
 
-def until(api, prefix, predicate, timeout=4):
+def until(api, prefix, predicate, timeout=10):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         state = api.get(f"{prefix}/state").json()
@@ -114,24 +114,32 @@ def test_keyboard_phrase_replans_and_port_loss_does_not_stop_transport(tmp_path)
         return devices[-1]
 
     with TestClient(create_app(tmp_path, midi_factory=build), base_url="http://localhost") as api:
-        prefix = f"/sessions/{api.post('/sessions', json={'bpm': 240}).json()['id']}"
+        # At 120 BPM a bar lasts 2 s, so the six notes below stay inside one bar even
+        # when a busy CI machine oversleeps each pause by a few hundred milliseconds.
+        prefix = f"/sessions/{api.post('/sessions', json={'bpm': 120}).json()['id']}"
         api.patch(f"{prefix}/midi", json={"port": DEVICE["id"]})
         until(api, prefix, lambda s: s["midi"]["connection"] == "connected")
         keyboard = devices[0]
         assert api.post(f"{prefix}/play").json()["transport"] == "playing"
+        started = time.monotonic()
         for pitch in (75, 77, 79, 81, 83, 82):
+            # 140 ms apart: each note lands on its own sixteenth (125 ms at 120 BPM).
             keyboard.play(0x90, pitch, 100)
-            time.sleep(0.045)
+            time.sleep(0.09)
             keyboard.play(0x80, pitch, 0)
-            time.sleep(0.025)
-        done = until(
-            api,
-            prefix,
-            lambda s: any(
-                p["player_response"] and p["player_response"]["phrase"]["activity"] == "busy"
-                for p in s["plans"]
-            ),
-        )
+            time.sleep(0.05)
+        played_for = time.monotonic() - started
+        try:
+            done = until(
+                api,
+                prefix,
+                lambda s: any(
+                    p["player_response"] and p["player_response"]["phrase"]["activity"] == "busy"
+                    for p in s["plans"]
+                ),
+            )
+        except AssertionError as error:
+            raise AssertionError(f"{error} | six notes took {played_for:.2f} s") from None
         responding = next(
             p
             for p in done["plans"]

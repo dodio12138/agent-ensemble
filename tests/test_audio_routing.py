@@ -1,4 +1,5 @@
 import json
+import time
 
 from fastapi.testclient import TestClient
 from test_live_midi import DEVICE, Keyboard, until
@@ -140,3 +141,36 @@ def test_requested_supercollider_can_start_without_the_optional_install(tmp_path
         assert state["audio_output"] == state["audio_fallback"] == "browser"
         assert state["audio_preferred"] == "supercollider"
         assert state["audio_reason"] == "unavailable"
+
+
+def wait_for(predicate, timeout=5.0):
+    deadline = time.monotonic() + timeout
+    while not predicate():
+        assert time.monotonic() < deadline, "timed out"
+        time.sleep(0.01)
+
+
+def test_person_can_switch_between_logic_and_browser_sound_while_playing(tmp_path):
+    logic = Synth()
+    app = create_app(tmp_path, audio_factory=lambda: logic)
+    client = TestClient(app, base_url="http://127.0.0.1")
+    with client:
+        state = client.post("/sessions").json()
+        assert state["audio_output"] == "native" and state["audio_routes"] == ["browser", "native"]
+        prefix = f"/sessions/{state['id']}"
+        client.post(f"{prefix}/play")
+        wait_for(lambda: any(event["type"] == "note_on" for event in logic.events))
+
+        browser = client.patch(f"{prefix}/audio", json={"output": "browser"}).json()
+        assert browser["audio_output"] == "browser" and browser["audio_preferred"] == "browser"
+        wait_for(lambda: logic.silences >= 1)
+        sent = len(logic.events)
+        time.sleep(1.2)
+        assert len(logic.events) == sent  # Logic hears nothing once the browser plays.
+
+        back = client.patch(f"{prefix}/audio", json={"output": "native"}).json()
+        assert back["audio_output"] == "native"
+        wait_for(lambda: len(logic.events) > sent)
+        unavailable = client.patch(f"{prefix}/audio", json={"output": "supercollider"})
+        assert unavailable.status_code == 409
+        client.post(f"{prefix}/stop")

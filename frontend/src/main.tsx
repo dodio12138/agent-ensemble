@@ -11,6 +11,7 @@ import {
   type State, type TimeSignature, type TrackId,
 } from './model'
 import { AudioRoute } from './AudioRoute'
+import { ConductorAgentSwitch } from './ConductorAgentSwitch'
 import { ConductorPanel } from './ConductorPanel'
 import { MidiPanel } from './MidiPanel'
 import { MidiScorePlayer } from './MidiScorePlayer'
@@ -401,11 +402,13 @@ function App() {
               <Download size={16} /><span>导出 MIDI</span>
             </a>
             <span className={`connection ${connection}`} title={status}><i /><span>{status}</span></span>
+            <ConductorAgentSwitch />
             <AudioRoute
               state={state}
               ready={session.audioReady}
               audible={session.audible}
               toggle={session.toggleAudio}
+              choose={session.chooseAudio}
             />
           </div>
         </div>

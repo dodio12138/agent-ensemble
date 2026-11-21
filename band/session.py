@@ -205,6 +205,10 @@ class Session:
             self.link.notify_transport(action == "play")
             return self.snapshot()
 
+    def choose_audio(self, route: AudioSource) -> None:
+        self.scheduler.prefer_audio(route)
+        self.output.audio.choose(route, self.scheduler.switch_audio)
+
     def configure_jam(self, *, enabled: bool | None = None, profile: str | None = None) -> None:
         if enabled:
             # The jam director plans its own solos; the chorus-level auto mode would clash.
@@ -289,6 +293,7 @@ class Session:
             "midi": self.midi.snapshot(),
             "link": self.link.snapshot(),
             "audio_device": getattr(self.output.audio.fallback, "device", None),
+            "audio_routes": self.output.audio.routes,
             "jam": self.jam.snapshot(),
             "remote_agents": {
                 track: agent.snapshot() for track, agent in self.remote_agents.items()

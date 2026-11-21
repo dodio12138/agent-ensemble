@@ -348,6 +348,16 @@ export function useSession() {
     }
   }
 
+  function chooseAudio(output: AudioOutput) {
+    // The click is the gesture browsers need before they play sound.
+    if (output === 'browser') {
+      setAudible(true)
+      synth.current?.toggle(true)
+      unlockAudio()
+    }
+    return send(() => ({ path: 'audio', values: { output } }))
+  }
+
   function toggleAudio() {
     const enabled = !audioReady || !audible
     setAudible(enabled)
@@ -362,7 +372,7 @@ export function useSession() {
   }
 
   return {
-    state, connection, error, audible, audioReady, toggleAudio, transport, pauseForScore,
+    state, connection, error, audible, audioReady, toggleAudio, chooseAudio, transport, pauseForScore,
     updateSettings, updateChord, updateTrack, updateMidi, updateLink, updateJam, retry, conduct, conducting, conductError,
     improvise, improvising, compose, composing, leaveSong, setPreset, setAutoImprovise,
     active: active.current, performed: performed.current,

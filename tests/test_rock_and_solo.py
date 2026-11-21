@@ -42,8 +42,15 @@ def part(bar_plan, track):
 def test_rock_keys_hold_triads_above_the_guitar_instead_of_doubling_it():
     verse = plan(rock(), 0)
     keys, guitar = part(verse, "piano"), part(verse, "rhythm_guitar")
-    assert {note.start_tick for note in keys} == {0, 2 * PPQ}
-    assert all(note.duration_ticks >= PPQ for note in keys)
+    # Verse: short stabs on one and the and-of-two, a slightly longer chord on four.
+    # (Negotiation may drop the beat-four chord to make room for a bass attack.)
+    starts = {note.start_tick for note in keys}
+    assert {0, PPQ + PPQ // 2} <= starts <= {0, PPQ + PPQ // 2, 3 * PPQ}
+    assert all(note.duration_ticks < PPQ // 2 for note in keys if note.start_tick < 3 * PPQ)
+    # The lift holds chords so the organ joins the ringing guitars.
+    lift = part(plan(rock(), 5), "piano")
+    assert {note.start_tick for note in lift} == {0, 2 * PPQ}
+    assert all(note.duration_ticks >= PPQ for note in lift)
     assert {note.pitch % 12 for note in keys} == {9, 0, 4}  # A minor triad, not a bare fifth
     mean = lambda notes: sum(note.pitch for note in notes) / len(notes)
     assert mean(keys) > mean(guitar)

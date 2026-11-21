@@ -192,6 +192,22 @@ class CompositionResult(FrozenModel):
     reason: RuleReason | None = None
 
 
+JsonMode = Literal["schema", "object"]
+_FENCE = re.compile(r"^\s*```(?:json)?|```\s*$", re.IGNORECASE)
+
+
+class _Ping(FrozenModel):
+    ok: bool
+
+
+_PING_SCHEMA = {
+    "type": "object",
+    "properties": {"ok": {"type": "boolean"}},
+    "required": ["ok"],
+    "additionalProperties": False,
+}
+
+
 @dataclass
 class ModelAttempt[T]:
     result: T | None = None
@@ -360,7 +376,7 @@ def _decode[T: FrozenModel](
             or len(content) > 2048
         ):
             raise ValueError
-        data = json.loads(content)
+        data = json.loads(_FENCE.sub("", content).strip())
         fields = schema_model.model_fields.keys() if expected_fields is None else expected_fields
         if not isinstance(data, dict) or data.keys() != fields:
             raise ValueError
@@ -387,27 +403,14 @@ class Conductor:
         *,
         timeout: float = 24.0,
         phrase_generation: bool = False,
+        json_mode: JsonMode = "schema",
     ) -> None:
-        if bool(base_url) != bool(model):
-            raise ValueError("Configure both the conductor base URL and model")
         if not math.isfinite(timeout) or timeout <= 0:
             raise ValueError("Conductor timeout must be positive and finite")
-        self.endpoint: str | None = None
-        if base_url:
-            uri = httpx2.URL(base_url)
-            if (
-                uri.scheme not in {"http", "https"}
-                or not uri.host
-                or uri.userinfo
-                or uri.query
-                or uri.fragment
-            ):
-                raise ValueError("Invalid conductor base URL")
-            self.endpoint = str(uri).rstrip("/") + "/chat/completions"
-        self.model = model
         self.timeout = timeout
-        self.phrase_generation = phrase_generation
-        self._headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        self.configure(
+            base_url, model, api_key, phrase_generation=phrase_generation, json_mode=json_mode
+        )
         self._active = False
         self._legacy_fields = set(ConductorPlan.model_fields) - {"profile"}
         schema = ConductorPlan.model_json_schema()
@@ -423,6 +426,58 @@ class Conductor:
             "required": [name for name in schema["properties"] if name in self._legacy_fields],
             "additionalProperties": False,
         }
+
+    def configure(
+        self,
+        base_url: str | None = None,
+        model: str | None = None,
+        api_key: str | None = None,
+        *,
+        phrase_generation: bool = False,
+        json_mode: JsonMode = "schema",
+    ) -> None:
+        """Point this conductor at another model; every session shares the change."""
+        if bool(base_url) != bool(model):
+            raise ValueError("Configure both the conductor base URL and model")
+        endpoint: str | None = None
+        local = True
+        if base_url:
+            uri = httpx2.URL(base_url)
+            if (
+                uri.scheme not in {"http", "https"}
+                or not uri.host
+                or uri.userinfo
+                or uri.query
+                or uri.fragment
+            ):
+                raise ValueError("Invalid conductor base URL")
+            endpoint = str(uri).rstrip("/") + "/chat/completions"
+            local = uri.host in {"127.0.0.1", "localhost", "::1"}
+        self.endpoint = endpoint
+        self.model = model
+        self.local = local
+        self.json_mode: JsonMode = json_mode
+        # Phrase scoring relies on llama-server grammars, which cloud providers lack.
+        self.phrase_generation = phrase_generation
+        self.api_key = api_key
+        self._headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+
+    async def ping(self) -> ModelAttempt[bool]:
+        """Send one tiny structured request to check the configured model answers."""
+
+        async def request(client: httpx2.AsyncClient) -> tuple[bool, str]:
+            body = await self._complete(
+                client,
+                schema_name="ping",
+                schema=_PING_SCHEMA,
+                prompt="You check that a music app can reach you. Answer ok=true.",
+                context={"check": "ping"},
+                max_tokens=32,
+            )
+            result, model = _decode(body, self.model or "", _Ping)
+            return result.ok, model
+
+        return await self._attempt(request)
 
     async def _attempt[T](
         self,
@@ -443,9 +498,12 @@ class Conductor:
             async with asyncio.timeout(budget or self.timeout):
                 async with httpx2.AsyncClient(
                     headers=self._headers,
-                    timeout=httpx2.Timeout(self.timeout, connect=min(1.5, self.timeout)),
+                    timeout=httpx2.Timeout(
+                        self.timeout, connect=min(1.5 if self.local else 6.0, self.timeout)
+                    ),
                     follow_redirects=False,
-                    trust_env=False,
+                    # A cloud provider may need the system proxy; the local model never does.
+                    trust_env=not self.local,
                 ) as client:
                     for attempts in (1, 2):
                         try:
@@ -804,6 +862,13 @@ class Conductor:
         max_tokens: int = 192,
     ) -> bytes:
         assert self.endpoint and self.model
+        if self.json_mode == "object":
+            # Many hosted APIs accept only JSON mode; carry the schema in the prompt instead.
+            prompt = (
+                f"{prompt}\n\nReply with one JSON object only, no prose or code fences. "
+                "It must have exactly these fields and match this JSON Schema:\n"
+                + json.dumps(schema, ensure_ascii=False, separators=(",", ":"))
+            )
         payload = {
             "model": self.model,
             "stream": False,
@@ -821,6 +886,8 @@ class Conductor:
                 },
             ],
         }
+        if self.json_mode == "object":
+            payload["response_format"] = {"type": "json_object"}
         return await self._chat(client, payload)
 
     async def _chat(self, client: httpx2.AsyncClient, payload: dict) -> bytes:

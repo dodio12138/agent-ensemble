@@ -51,8 +51,35 @@ class AudioRouter:
         self.start_deadline = monotonic() + 3.0
         self.retry_at = 0.0
 
+    @property
+    def routes(self) -> list[AudioSource]:
+        """Every output this session can play through, for the person to choose from."""
+        routes: list[AudioSource] = ["browser"]
+        if self.fallback:
+            routes.append("native")
+        if self.supercollider:
+            routes.append("supercollider")
+        return routes
+
+    def choose(self, route: AudioSource, switch: Callable[[AudioSource, str | None], None]) -> None:
+        """Move to the output the person picked; the switch lands at an event boundary."""
+        if route not in self.routes:
+            raise ValueError(f"Audio output {route} is not available")
+        self.preferred = route
+        if route == "supercollider":
+            # Let polling move over once the server answers, as at startup.
+            self.retry_at = 0.0
+            self.start_deadline = monotonic() + 3.0
+            self._publish(switch, self.status[0], "starting")
+        else:
+            self._publish(switch, route, None)
+
     def poll(self, switch: Callable[[AudioSource, str | None], None]) -> None:
-        if not self.supercollider or monotonic() < self.retry_at:
+        if (
+            not self.supercollider
+            or self.preferred != "supercollider"
+            or monotonic() < self.retry_at
+        ):
             return
         try:
             ready = self.supercollider.poll()

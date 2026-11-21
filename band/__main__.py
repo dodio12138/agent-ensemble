@@ -10,6 +10,7 @@ from time import sleep
 
 import uvicorn
 
+from band.agents import ConductorAgents, endpoint_of
 from band.api import ROOT, create_app
 from band.conductor import Conductor
 from band.local_model import LocalModel
@@ -71,6 +72,7 @@ def main() -> None:
     model = os.environ.get("ENSEMBLE_LLM_MODEL")
     key = os.environ.get("ENSEMBLE_LLM_API_KEY")
     try:
+        local_label = "本机 Qwen"
         if args.rules_only:
             conductor = Conductor()
         elif url or model:
@@ -78,8 +80,15 @@ def main() -> None:
                 conductor = Conductor(url, model, key)
             except ValueError as exc:
                 parser.error(str(exc))
+            local_label = f"外部 {model}"
         else:
             conductor = model_process.start()
+        agents = ConductorAgents(
+            conductor,
+            ROOT / ".runtime" / "llm",
+            local=endpoint_of(conductor),
+            local_label=local_label,
+        )
         sc_factory = None
         if args.supercollider and (sc_port := sc_process.start()) is not None:
 
@@ -94,7 +103,7 @@ def main() -> None:
         app = create_app(
             args.state_dir,
             audio_factory=audio_factory,
-            conductor=conductor,
+            agents=agents,
             sc_factory=sc_factory,
             prefer_sc=args.supercollider,
         )
