@@ -170,6 +170,8 @@ class Session:
         self.last_conduct_start = float("-inf")
         self.last_conductor_result: dict | None = None
         self.composition_task: asyncio.Task | None = None
+        self.refinement_task: asyncio.Task | None = None
+        self.refinement: dict | None = None
         self.composition_source: str | None = None
         self.composition_error: str | None = None
         self.improvisation_auto = False
@@ -262,6 +264,7 @@ class Session:
             "bar": state["current_bar"],
             "conductor": result,
             "conductor_model": self.conductor.model,
+            "refinement": self.refinement,
             "composition": {
                 "planning": self.composition_task is not None and not self.composition_task.done(),
                 "source": self.composition_source,
@@ -412,12 +415,13 @@ class Session:
                     next_chorus=proposal.timing_boundary == "next_chorus",
                 )
 
-    async def preset(self, style: Genre) -> dict:
+    async def preset(self, style: Genre, *, refine: bool = True) -> dict:
+        """Apply the rule preset now, then let the model arrange the style in the background."""
         started = time.perf_counter()
         async with self.commands:
             current, _ = self.scheduler.desired_configuration()
             plan, progression = genre_preset(style, current.conductor)
-            return await self._apply_conductor(
+            state = await self._apply_conductor(
                 plan,
                 {
                     "source": "preset",
@@ -430,6 +434,75 @@ class Session:
                 started,
                 progression=progression,
             )
+        if refine:
+            self.start_refinement(style)
+        return self.snapshot() if refine else state
+
+    def start_refinement(self, genre: Genre) -> None:
+        if self.refinement_task is not None and not self.refinement_task.done():
+            self.refinement_task.cancel()
+        settings, _ = self.scheduler.desired_configuration()
+        if not self.conductor.model:
+            self.refinement = {"genre": genre, "status": "skipped", "reason": "not_configured"}
+            return
+        if settings.song is not None or self.jam.enabled:
+            reason = "song" if settings.song is not None else "jam"
+            self.refinement = {"genre": genre, "status": "skipped", "reason": reason}
+            return
+        self.refinement = {"genre": genre, "status": "planning"}
+        self.refinement_task = asyncio.create_task(self._refine(genre), name=f"refine-{self.id}")
+
+    async def _refine(self, genre: Genre) -> None:
+        started = time.perf_counter()
+        settings, _ = self.scheduler.desired_configuration()
+        try:
+            arrangement, attempt = await self.conductor.arrange_genre(genre, settings)
+        except Exception:
+            logger.exception("Style refinement failed for session %s", self.id)
+            self.refinement = {"genre": genre, "status": "failed", "reason": "unavailable"}
+            return
+        if arrangement is None:
+            self.refinement = {"genre": genre, "status": "failed", "reason": attempt.reason}
+            return
+        async with self.commands:
+            latest, _ = self.scheduler.desired_configuration()
+            if (
+                latest.conductor.profile.genre
+                if latest.conductor.profile
+                else latest.conductor.style
+            ) != genre:
+                self.refinement = {"genre": genre, "status": "superseded"}
+                return
+            if arrangement.density != latest.density:
+                self.scheduler.stage_settings({"density": arrangement.density})
+            for track, patch in arrangement.tracks.items():
+                self.scheduler.stage_track(track, patch)
+            state = await self._apply_conductor(
+                arrangement.plan,
+                {
+                    "source": "llm",
+                    "model": attempt.model,
+                    "reason": None,
+                    "attempts": attempt.attempts,
+                    "prompt_version": "genre-arrangement-v1",
+                    "note": arrangement.note,
+                    "corrections": list(arrangement.corrections),
+                },
+                f"arrange:{genre}",
+                started,
+                progression=arrangement.progression,
+                bpm=arrangement.bpm,
+            )
+        result = state.get("conductor") or {}
+        self.refinement = {
+            "genre": genre,
+            "status": "applied",
+            "note": arrangement.note,
+            "bpm": arrangement.bpm,
+            "effective_bar": result.get("effective_bar"),
+            "corrections": list(arrangement.corrections),
+            "tones": {track: patch["program"] for track, patch in arrangement.tracks.items()},
+        }
 
     async def _apply_conductor(
         self,
@@ -618,6 +691,10 @@ class Session:
             self.composition_task.cancel()
             with suppress(asyncio.CancelledError):
                 await self.composition_task
+        if self.refinement_task is not None and not self.refinement_task.done():
+            self.refinement_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self.refinement_task
         self.cancel_improvisation()
         if self.improvisation_task is not None:
             with suppress(asyncio.CancelledError):

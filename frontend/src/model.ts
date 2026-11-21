@@ -156,6 +156,18 @@ export interface ConductorResult {
   bpm?: number | null
   meter?: TimeSignature | null
   timing_boundary?: 'next_chorus' | null
+  note?: string
+  corrections?: string[]
+}
+
+export interface RefinementState {
+  genre: string
+  status: 'planning' | 'applied' | 'failed' | 'skipped' | 'superseded'
+  reason?: string | null
+  note?: string
+  bpm?: number
+  effective_bar?: number | null
+  corrections?: string[]
 }
 
 export interface ImprovisationPhrase {
@@ -361,6 +373,7 @@ export interface State {
   midi?: MidiState
   link?: LinkState
   jam?: JamState
+  refinement?: RefinementState | null
   timing?: TimingState
   remote_agents?: Partial<Record<TrackId, RemoteAgentState>>
 }

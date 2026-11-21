@@ -310,7 +310,16 @@ export function ConductorPanel({ state, disabled, conducting, improvising, compo
   const playingMode = jam?.enabled ? `即兴演出${jam.current ? ` · ${jam.current.label}` : ''}`
     : improvisation?.active ? '即兴中'
     : song ? `整首歌${state?.section ? ` · ${SECTION_NAMES[state.section.role]}` : ''}` : '八小节循环'
-  const busyText = conducting ? '正在生成编排，乐队照常演奏。'
+  const refinement = state?.refinement
+  const refiningName = refinement ? GENRE_NAMES[refinement.genre as Genre] ?? refinement.genre : ''
+  const refinementNote = refinement && refinement.status !== 'planning' && refinement.status !== 'applied'
+    ? refinement.status === 'superseded' ? '' : `LLM 未细化${refiningName}（${
+      refinement.reason === 'jam' ? '即兴演出中' : refinement.reason === 'song' ? '整首歌由段落控制'
+        : reasons[refinement.reason ?? ''] ?? '未完成'}），保留规则预设`
+    : ''
+  const busyText = refinement?.status === 'planning'
+    ? `正在让 LLM 细化${refiningName}编配（规则预设已生效）`
+    : conducting ? '正在生成编排，乐队照常演奏。'
     : composingSong ? '正在安排段落，乐队照常演奏。'
     : planning ? '正在安排下一轮即兴…' : ''
   const failure = error || composition?.error
@@ -357,6 +366,14 @@ export function ConductorPanel({ state, disabled, conducting, improvising, compo
                 </>
               ) : <span className="conductor-reason">选择风格或输入指令</span>)}
             </p>
+            {!busyText && result?.source === 'llm' && result.note && (
+              <p className="now-note" title={result.model ?? undefined}>“{result.note}”
+                {result.corrections && result.corrections.length > 0 && (
+                  <small> · 规则修正：{result.corrections.join('；')}</small>
+                )}
+              </p>
+            )}
+            {!busyText && refinementNote && <p className="now-note muted">{refinementNote}</p>}
             {plan && (
               <dl className="now-band" aria-label={next?.settings.conductor === plan ? '待生效乐手分工' : '当前乐手分工'}>
                 {CORE_TRACK_IDS.map(track => (

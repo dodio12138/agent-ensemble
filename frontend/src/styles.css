@@ -376,6 +376,9 @@ button.audio-toggle:hover { background: #2a2b2e; }
 .now-next { margin: 0; padding: 4px 8px; border-left: 2px solid #a0805f; color: #e6c3a3; font-size: 11px; }
 .now-status { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0; color: var(--text); font-size: 11px; line-height: 1.45; }
 .now-status.error { color: #f8b0a9; }
+.now-note { margin: 0; padding: 4px 8px; border-left: 2px solid #4f8a71; color: #b7e2cf; font-size: 12px; line-height: 1.45; }
+.now-note small { color: var(--muted); font-size: 10px; }
+.now-note.muted { border-left-color: #5a5b5e; color: var(--muted); font-size: 11px; }
 .now-band { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0; padding-top: 6px; border-top: 1px solid #2d2e31; color: var(--muted); font-size: 11px; }
 .now-band > div { display: flex; gap: 5px; }
 .now-band dd { margin: 0; }

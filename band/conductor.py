@@ -41,6 +41,13 @@ from band.phrase_generation import (
 )
 from band.phrase_score import STEPS_PER_QUARTER, phrase_issues
 from band.song import SONG_PROMPT, SongChoice, build_song, song_context
+from band.style_arrangement import (
+    ARRANGE_PROMPT,
+    ArrangementChoice,
+    GenreArrangement,
+    context_for,
+    materialize,
+)
 from band.style_direction import (
     STYLE_PROMPT,
     STYLE_PROMPT_VERSION,
@@ -716,6 +723,27 @@ class Conductor:
             progression=progression,
         )
 
+    async def arrange_genre(
+        self, genre: Genre, settings: MusicSettings
+    ) -> tuple[GenreArrangement | None, ModelAttempt]:
+        """Ask the model to arrange a chosen style; rules validate the result."""
+
+        async def request(client: httpx2.AsyncClient) -> tuple[ArrangementChoice, str]:
+            body = await self._complete(
+                client,
+                schema_name="genre_arrangement",
+                schema=ArrangementChoice.output_schema(),
+                prompt=ARRANGE_PROMPT,
+                context=context_for(genre, settings),
+                max_tokens=320,
+            )
+            return _decode(body, self.model or "", ArrangementChoice)
+
+        attempt = await self._attempt(request)
+        if attempt.result is None:
+            return None, attempt
+        return materialize(genre, attempt.result, settings), attempt
+
     async def improvise(
         self,
         instruction: str,
@@ -773,13 +801,14 @@ class Conductor:
         schema: dict,
         prompt: str,
         context: dict,
+        max_tokens: int = 192,
     ) -> bytes:
         assert self.endpoint and self.model
         payload = {
             "model": self.model,
             "stream": False,
             "temperature": 0,
-            "max_tokens": 192,
+            "max_tokens": max_tokens,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {"name": schema_name, "strict": True, "schema": schema},
