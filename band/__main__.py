@@ -14,6 +14,7 @@ from band.api import ROOT, create_app
 from band.conductor import Conductor
 from band.local_model import LocalModel
 from band.native import NATIVE_LIBRARY, FluidOutput
+from band.process_watchdog import sweep
 from band.supercollider import LocalSuperCollider, SuperColliderOutput
 
 
@@ -51,6 +52,8 @@ def main() -> None:
             return FluidOutput(args.fluid_library, str(args.soundfont), args.audio_driver)
 
     model_process = LocalModel(ROOT / ".runtime" / "llm", args.state_dir)
+    # Clear helpers that a killed or crashed earlier run left running.
+    sweep([model_process.executable, ROOT / ".runtime" / "supercollider" / "scsynth"])
     sc_directory = ROOT / ".runtime" / "supercollider"
     sc_process = LocalSuperCollider(sc_directory, args.state_dir)
     url = os.environ.get("ENSEMBLE_LLM_BASE_URL")

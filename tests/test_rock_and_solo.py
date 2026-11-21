@@ -4,6 +4,8 @@ import subprocess
 import sys
 import time
 
+import pytest
+
 from band.conductor import genre_preset
 from band.improv_arrangement import apply_improvised_fill
 from band.music import (
@@ -133,3 +135,42 @@ def test_watchdog_only_stops_the_program_it_was_given():
         for process in (child, parent):
             process.kill()
             process.wait()
+
+
+def test_startup_sweep_stops_only_orphaned_helpers(tmp_path):
+    import shutil
+
+    from band.process_watchdog import sweep
+
+    # A real executable at its own path, as llama-server and scsynth are.
+    source = tmp_path / "helper.c"
+    source.write_text("#include <unistd.h>\nint main(void) { sleep(30); return 0; }\n")
+    helper = tmp_path / "fake-helper"
+    compiler = shutil.which("cc") or shutil.which("clang")
+    if compiler is None:
+        pytest.skip("No C compiler to build a stand-in helper")
+    subprocess.run([compiler, "-o", str(helper), str(source)], check=True)
+    # A child of this test: its owner is alive, so the sweep must leave it running.
+    owned = subprocess.Popen([str(helper), "30"])
+    # An orphan: the shell that started it exits at once, so it is reparented to PID 1.
+    subprocess.run(["/bin/sh", "-c", f'"{helper}" 30 >/dev/null 2>&1 & echo $!'], check=True)
+    try:
+        orphans = []
+        for _ in range(50):
+            listing = subprocess.run(
+                ["ps", "-axo", "pid=,ppid=,command="], check=False, capture_output=True, text=True
+            ).stdout
+            orphans = [
+                int(line.split()[0])
+                for line in listing.splitlines()
+                if str(helper) in line and line.split()[1] == "1"
+            ]
+            if orphans:
+                break
+            time.sleep(0.05)
+        assert orphans, "could not create an orphaned helper"
+        assert sorted(sweep([helper])) == sorted(orphans)
+        assert owned.poll() is None
+    finally:
+        owned.kill()
+        owned.wait()
