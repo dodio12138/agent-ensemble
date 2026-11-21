@@ -634,6 +634,28 @@ class Scheduler:
             tick = self._tick()
             return self._transport, self._bar_start_tick + tick, tick, self._active_settings()
 
+    def midi_position_at(self, at_ns: int) -> tuple[str, int, int, MusicSettings]:
+        """Position when a MIDI message arrived, not when the event loop got to it.
+
+        A busy loop handles queued key presses back to back; measuring each at its
+        arrival keeps their rhythm. Fake test clocks don't share perf_counter's
+        timeline, so they fall back to the current position.
+        """
+        with self._condition:
+            settings = self._active_settings()
+            now = self._clock()
+            if self._transport != "playing" or self._clock is not time.perf_counter_ns:
+                tick = self._tick()
+                return self._transport, self._bar_start_tick + tick, tick, settings
+            offset = math.floor((min(at_ns, now) - self._bar_start) / self._rate)
+            offset = min(offset, settings.bar_ticks - 1)
+            return (
+                self._transport,
+                self._bar_start_tick + offset,
+                offset % settings.bar_ticks,
+                settings,
+            )
+
     def player_context(self) -> tuple[PlayerPhrase | None, int]:
         with self._condition:
             return self._player_phrase, self._player_version

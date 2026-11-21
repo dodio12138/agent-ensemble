@@ -185,7 +185,7 @@ class LiveMidi:
             source_channel=channel,
             received_ns=received,
         )
-        transport, absolute, tick, settings = self.scheduler.midi_position()
+        transport, absolute, tick, settings = self.scheduler.midi_position_at(received)
         if transport == "playing" and self.settings.adaptive:
             self.attacks.append(Attack(absolute, tick, settings.meter, pitch, velocity))
 

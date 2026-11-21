@@ -1,3 +1,4 @@
+import asyncio
 import json
 import time
 
@@ -164,3 +165,37 @@ def test_late_keyboard_update_preserves_last_valid_draft():
         assert after == before and not after["fallback_tracks"]
     finally:
         scheduler.close()
+
+
+def test_attacks_keep_their_arrival_time_when_the_event_loop_is_busy():
+    """A stalled loop delivers queued key presses together; their beats must not merge."""
+    from band.live_midi import LiveMidi
+
+    async def scenario():
+        planner = Planner()
+        scheduler = Scheduler(planner, threaded=False)
+        midi = LiveMidi(scheduler, Keyboard)
+        try:
+            midi.start()
+            midi.configure({"port": DEVICE["id"]})
+            await asyncio.sleep(0)
+            assert midi.status["connection"] == "connected"
+            for bar, settings, version in scheduler.planning_targets():
+                scheduler.commit(await planner.plan(bar, settings, version))
+            scheduler.play()
+            pressed = time.perf_counter_ns()
+            spacing = 140_000_000  # 140 ms apart: one sixteenth at 120 BPM is 125 ms.
+            # The loop was busy while these arrived; they are handled only now, together.
+            time.sleep(0.75)  # noqa: ASYNC251 - deliberately block the loop
+            for index, pitch in enumerate((75, 77, 79, 81, 83, 82)):
+                midi._message(DEVICE["id"], (0x90, pitch, 100), pressed + index * spacing)
+            ticks = sorted({attack.tick for attack in midi.attacks})
+            assert len(ticks) == 6
+            midi.update_phrase()
+            phrase, _ = scheduler.player_context()
+            assert phrase is not None and phrase.activity == "busy"
+        finally:
+            await midi.close()
+            scheduler.close()
+
+    asyncio.run(scenario())
