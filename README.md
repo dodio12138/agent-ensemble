@@ -48,6 +48,6 @@
 
 后端是 Python 3.12 + FastAPI（`band/`），控制台是 React + Vite（`frontend/`）。
 
-## 第三方组件
+## 许可
 
-GeneralUser GS 音色、Qwen2.5 模型权重、SuperCollider 和 Ableton Link（经 [aalink](https://github.com/artfwo/aalink)，GPLv3+）各自遵循其许可，由安装脚本下载，不包含在本仓库中。
+本项目以 [GPL-3.0](LICENSE) 发布。GeneralUser GS 音色、Qwen2.5 模型权重、SuperCollider 和 Ableton Link（经 [aalink](https://github.com/artfwo/aalink)）各自遵循其许可，由安装脚本下载，不包含在本仓库中。
