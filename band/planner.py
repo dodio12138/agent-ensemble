@@ -10,6 +10,7 @@ from functools import lru_cache
 from itertools import product
 from typing import TYPE_CHECKING, Protocol
 
+from .expression import GLIDE_TRACKS, express
 from .game_music import game_parts
 from .music import (
     BAR_TICKS,
@@ -1738,65 +1739,6 @@ _VOCAL_CELLS: dict[str, tuple[tuple[tuple[int, int], ...], ...]] = {
 }
 
 
-def _sung(
-    context: BarContext, lines: list[tuple[int, int, int, int]], scat: bool
-) -> tuple[Note, ...]:
-    """Join sung notes the way a voice does: slides between them and runs into long notes.
-
-    With the voice's slides on, neighbouring notes are tied (no gap) and glide from
-    one pitch to the next; notes after a breath scoop up from just below; and, the
-    stronger the setting, the more long notes get a quick run (转音) from above.
-    """
-    settings = context.settings
-    if not settings.vocal_glide or settings.vocal_glide_amount <= 0:
-        return tuple(_note("vocal", context, *line) for line in lines)
-    amount = settings.vocal_glide_amount
-    rng = context.random_for("vocal")
-    scale = _scale_classes(context)
-    low, high = TRACK_DEFINITIONS["vocal"].min_pitch, TRACK_DEFINITIONS["vocal"].max_pitch
-    ladder = [pitch for pitch in range(low, high + 1) if pitch % 12 in scale]
-    run_step = SIXTEENTH // 2 if amount >= 0.6 else SIXTEENTH * 2 // 3
-    notes: list[Note] = []
-    previous: tuple[int, int, int] | None = None  # (tick, end, pitch) of the last note
-    for tick, duration, pitch, velocity in lines:
-        tied = previous is not None and tick - previous[1] <= SIXTEENTH
-        if tied and notes:
-            # Stretch the last note up to this one so the voice never stops between them.
-            last = notes[-1]
-            notes[-1] = last.model_copy(update={"duration_ticks": tick - last.start_tick})
-        slide_from = previous[2] if tied else None
-        slide_ms = round((25 + 60 * amount) if scat else (40 + 160 * amount))
-        if slide_from is None and not scat and rng.random() < 0.6 * amount:
-            slide_from = pitch - (2 if amount >= 0.6 else 1)  # scoop in from below
-            slide_ms = round(60 + 90 * amount)
-        run = (
-            not scat
-            and duration >= PPQ
-            and rng.random() < (amount - 0.25) * 1.3
-            and pitch in ladder
-            and ladder.index(pitch) + 2 < len(ladder)
-        )
-        if run:
-            upper = ladder[ladder.index(pitch) + 2], ladder[ladder.index(pitch) + 1]
-            for offset, ornament in enumerate(upper):
-                notes.append(
-                    _note(
-                        "vocal", context, tick + offset * run_step, run_step, ornament, velocity - 8
-                    ).model_copy(
-                        update={"slide_from": slide_from, "slide_ms": 35} if slide_from else {}
-                    )
-                )
-                slide_from = ornament
-            tick, duration = tick + 2 * run_step, duration - 2 * run_step
-            slide_ms = 45
-        note = _note("vocal", context, tick, duration, pitch, velocity)
-        if slide_from is not None and slide_from != pitch and low <= slide_from <= high:
-            note = note.model_copy(update={"slide_from": slide_from, "slide_ms": slide_ms})
-        notes.append(note)
-        previous = (tick, tick + duration, pitch)
-    return tuple(notes)
-
-
 class VocalAgent:
     """A wordless voice: choir pads, a sung line, backing oohs or jazz scat."""
 
@@ -1826,7 +1768,7 @@ class VocalAgent:
             cell = _VOCAL_CELLS[role][(0, 1, 0, 2)[phrase_bar]]
             center = 69 if role == "lead" else 67
             lines = _tune("vocal", context, cell, center, 57, 79, f"vocal-{role}")
-            notes = _sung(context, lines, scat=role == "scat")
+            notes = tuple(_note("vocal", context, *line) for line in lines)
             label = "领唱「喔」的旋律句" if role == "lead" else "拟声唱出摇摆八分的乐句"
             return AgentOutput(label, notes)
         if context.bar % 2 == 0:
@@ -1914,6 +1856,16 @@ def _fallback_output(track: TrackId, context: BarContext) -> AgentOutput:
     return RULE_AGENTS[track].arrange(replace(context, settings=simplified))
 
 
+def _expressed(
+    track: TrackId, settings: MusicSettings, bar: int, notes: tuple[Note, ...]
+) -> tuple[Note, ...]:
+    """Add the track's slides and runs, keeping the plain line if they would not fit."""
+    try:
+        return validate_notes(bar, express(track, settings, bar, notes))
+    except ValueError:
+        return notes
+
+
 class Planner:
     """Plan each musician independently, passing completed proposals through the bar context."""
 
@@ -1980,7 +1932,7 @@ class Planner:
         tracks = active_tracks(settings.lineup)
         for track in tracks:
             output = _fallback_output(track, context)
-            notes.extend(output.notes)
+            notes.extend(_expressed(track, settings, bar, output.notes))
             intents.append(
                 AgentDecision(
                     track_id=track,
@@ -2046,6 +1998,8 @@ class Planner:
                 ready,
                 on_negotiation,
             )
+        for track in parts.keys() & set(GLIDE_TRACKS):
+            parts[track] = _expressed(track, settings, bar, parts[track])
         return BarPlan(
             bar=bar,
             version=version,

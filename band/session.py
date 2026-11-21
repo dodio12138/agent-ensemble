@@ -14,6 +14,7 @@ from uuid import uuid4
 
 from band.audio_routing import AudioRouter, AudioSource, SuperColliderSink
 from band.conductor import Conductor, genre_preset
+from band.expression import express
 from band.game_music import game_tones
 from band.improv_arrangement import apply_improvised_fill, apply_solo
 from band.jam import JamDirector
@@ -28,6 +29,7 @@ from band.music import (
     NegotiationEvent,
     TimeSignature,
     TrackId,
+    validate_notes,
 )
 from band.native import FluidOutput
 from band.planner import Planner
@@ -372,6 +374,16 @@ class Session:
                 )
             if solo := self.jam.solo_for(bar):
                 plan = apply_solo(plan, settings, *solo)
+                # The solo line gets the soloist's slides and bends too.
+                soloist = solo[0]
+                line = tuple(note for note in plan.notes if note.track_id == soloist)
+                shaped = express(soloist, settings, bar, line)
+                if shaped != line:
+                    others = tuple(note for note in plan.notes if note.track_id != soloist)
+                    with suppress(ValueError):
+                        plan = plan.model_copy(
+                            update={"notes": validate_notes(bar, others + shaped)}
+                        )
             plan = plan.model_copy(
                 update={
                     "harmony": settings.chord_at(bar).symbol,

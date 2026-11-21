@@ -37,6 +37,16 @@ ROOT = Path(__file__).resolve().parent.parent
 logger = logging.getLogger(__name__)
 
 
+GlideTrack = Literal["vocal", "lead_guitar", "melody", "chip", "bass", "strings", "brass"]
+
+
+class GlidePatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    on: bool | None = None
+    amount: float | None = Field(default=None, ge=0, le=1)
+
+
 class SettingsPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -48,8 +58,8 @@ class SettingsPatch(BaseModel):
     collaboration: Collaboration | None = None
     lineup: Lineup | None = None
     meter: TimeSignature | None = None
-    vocal_glide: bool | None = None
-    vocal_glide_amount: float | None = Field(default=None, ge=0, le=1)
+    # Partial per-track changes, e.g. {"lead_guitar": {"on": true}}; other tracks keep theirs.
+    glide: dict[GlideTrack, GlidePatch] | None = None
 
 
 class TrackPatch(BaseModel):

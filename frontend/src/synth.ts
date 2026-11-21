@@ -100,6 +100,22 @@ const VOWELS = {
   synth: [[650, 1], [1080, 0.6], [2600, 0.3]],
 } as const
 
+interface Slide {
+  ratio: number // start frequency as a ratio of the target
+  seconds: number
+}
+
+/** A note that slides in: start at the earlier pitch and glide to the written one. */
+function slideOf(event: BandEvent): Slide | undefined {
+  if (event.slide_from === undefined || event.pitch === undefined) return undefined
+  return { ratio: 2 ** ((event.slide_from - event.pitch) / 12), seconds: Math.max(0.015, (event.slide_ms ?? 80) / 1000) }
+}
+
+function glideTo(frequency: AudioParam, target: number, now: number, slide?: Slide) {
+  frequency.setValueAtTime(target * (slide?.ratio ?? 1), now)
+  if (slide) frequency.exponentialRampToValueAtTime(target, now + slide.seconds)
+}
+
 interface Voice {
   track: VoiceTrack
   output: GainNode
@@ -193,9 +209,9 @@ export class StudioSynth {
         event.velocity ?? 85, event.volume ?? 0.8,
       )
     } else if (track !== 'player' && (tone = toneFor(track, event.program))) {
-      this.modernInstrument(context, event.pitch, volume, voice, tone, event.articulation)
+      this.modernInstrument(context, event.pitch, volume, voice, tone, event.articulation, slideOf(event))
     } else {
-      this.instrument(context, event.pitch, volume, voice, event.program ?? 0)
+      this.instrument(context, event.pitch, volume, voice, event.program ?? 0, slideOf(event))
     }
   }
 
@@ -282,7 +298,7 @@ export class StudioSynth {
 
   private modernInstrument(
     context: AudioContext, pitch: number, volume: number, voice: Voice, track: keyof typeof modernTone,
-    articulation: BandEvent['articulation'],
+    articulation: BandEvent['articulation'], slide?: Slide,
   ) {
     const now = context.currentTime
     const frequency = 440 * 2 ** ((pitch - 69) / 12)
@@ -315,7 +331,7 @@ export class StudioSynth {
       const oscillator = context.createOscillator()
       const partialGain = context.createGain()
       oscillator.type = partial.wave
-      oscillator.frequency.value = frequency * partial.ratio
+      glideTo(oscillator.frequency, frequency * partial.ratio, now, slide)
       partialGain.gain.value = partial.gain
       oscillator.connect(partialGain).connect(highpass)
       oscillator.start(now)
@@ -334,13 +350,15 @@ export class StudioSynth {
     const peak = Math.max(0.0002, volume * tone.level)
     const gain = voice.output.gain
     gain.setValueAtTime(0.0001, now)
-    const attack = legato ? 0.026 : tone.attack
+    const attack = legato || slide ? 0.026 : tone.attack
     gain.exponentialRampToValueAtTime(peak, now + attack)
     gain.exponentialRampToValueAtTime(Math.max(0.00011, peak * (muted ? 0.16 : tone.sustain)),
       now + attack + (muted ? 0.075 : tone.decay))
   }
 
-  private instrument(context: AudioContext, pitch: number, volume: number, voice: Voice, program: number) {
+  private instrument(
+    context: AudioContext, pitch: number, volume: number, voice: Voice, program: number, slide?: Slide,
+  ) {
     const now = context.currentTime
     const frequency = 440 * 2 ** ((pitch - 69) / 12)
     const bass = voice.track === 'bass'
@@ -373,7 +391,7 @@ export class StudioSynth {
       const carrier = context.createOscillator()
       const mix = context.createGain()
       carrier.type = partial.wave
-      carrier.frequency.value = frequency * partial.ratio
+      glideTo(carrier.frequency, frequency * partial.ratio, now, slide)
       mix.gain.value = partial.gain
       carrier.connect(mix).connect(filter)
       carrier.start(now)

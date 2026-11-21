@@ -9,7 +9,15 @@ from test_midi_output import FakePort
 from band.api import create_app
 from band.conductor import Conductor, genre_preset, rule_plan, vocal_request
 from band.midi_output import MidiPortOutput
-from band.music import PPQ, ConductorPlan, MusicSettings, active_tracks, validate_notes
+from band.music import (
+    PPQ,
+    ConductorPlan,
+    Glide,
+    Glides,
+    MusicSettings,
+    active_tracks,
+    validate_notes,
+)
 from band.planner import Planner
 from band.style_arrangement import ArrangementChoice, materialize
 from band.vocals import VOCAL_GUIDE, vocal_options, vocal_role
@@ -17,9 +25,12 @@ from band.vocals import VOCAL_GUIDE, vocal_options, vocal_role
 LOOP = ("C", "Am", "F", "G", "C", "Am", "F", "G")
 
 
-def styled(genre, lineup="trio", **changes):
+def styled(genre, lineup="trio", glide=None, **changes):
     conductor, _ = genre_preset(genre, ConductorPlan())
-    return MusicSettings(lineup=lineup, conductor=conductor, progression=LOOP, **changes)
+    glides = Glides(**({} if glide is None else {"vocal": glide}))
+    return MusicSettings(
+        lineup=lineup, conductor=conductor, progression=LOOP, glide=glides, **changes
+    )
 
 
 def voice(settings, bar):
@@ -45,7 +56,7 @@ def test_every_lineup_has_a_voice_with_a_style_role():
 @pytest.mark.parametrize("genre", ["swing", "pop", "funk", "cinematic", "battle", "stealth"])
 @pytest.mark.parametrize("lineup", ["trio", "modern", "game"])
 def test_the_voice_plans_valid_bars_in_every_lineup(genre, lineup):
-    settings = styled(genre, lineup, vocal_glide_amount=1.0)
+    settings = styled(genre, lineup, Glide(on=True, amount=1.0))
     for bar in range(8):
         notes = tuple(voice(settings, bar))
         assert validate_notes(bar, notes) == notes
@@ -58,7 +69,7 @@ def test_roles_sing_differently():
     assert not backing[0] and len(backing[1]) == 2 and backing[1][0].start_tick == 2 * PPQ
     assert not voice(styled("chiptune", "game"), 0)
     # A lead singer takes one four-bar phrase, then steps back to backing.
-    lead = styled("pop", vocal_glide=False)
+    lead = styled("pop", glide=Glide(on=False))
     assert len(voice(lead, 0)) >= 3 and len(voice(lead, 5)) == 2
     # Scat sits on swung eighths, like the rest of a swing band.
     swung = {note.start_tick % PPQ for bar in range(4) for note in voice(styled("swing"), bar)}
@@ -66,21 +77,27 @@ def test_roles_sing_differently():
 
 
 def test_slides_and_runs_follow_the_switch_and_strength():
-    plain = [note for bar in range(4) for note in voice(styled("pop", vocal_glide=False), bar)]
+    plain = [note for bar in range(4) for note in voice(styled("pop", glide=Glide(on=False)), bar)]
     assert plain and all(note.slide_from is None for note in plain)
     strong = [
-        note for bar in range(4) for note in voice(styled("pop", vocal_glide_amount=1.0), bar)
+        note
+        for bar in range(4)
+        for note in voice(styled("pop", glide=Glide(on=True, amount=1.0)), bar)
     ]
     slid = [note for note in strong if note.slide_from is not None]
     assert len(slid) >= len(strong) // 2
     assert any(note.duration_ticks == PPQ // 8 for note in strong)  # quick runs (转音)
     # Tied notes leave no gap: the voice keeps sounding from one pitch to the next.
     for bar in range(4):
-        notes = voice(styled("pop", vocal_glide_amount=1.0), bar)
+        notes = voice(styled("pop", glide=Glide(on=True, amount=1.0)), bar)
         for left, right in itertools.pairwise(notes):
             if right.slide_from == left.pitch:
                 assert left.start_tick + left.duration_ticks == right.start_tick
-    light = [note for bar in range(4) for note in voice(styled("pop", vocal_glide_amount=0.2), bar)]
+    light = [
+        note
+        for bar in range(4)
+        for note in voice(styled("pop", glide=Glide(on=True, amount=0.2)), bar)
+    ]
     assert max(n.slide_ms or 0 for n in light) < max(n.slide_ms or 0 for n in slid)
     assert not any(note.duration_ticks <= PPQ // 6 for note in light)  # no runs when subtle
 
@@ -141,12 +158,18 @@ def test_slides_reach_midi_as_portamento():
 def test_the_glide_switch_and_strength_are_settings(tmp_path):
     with TestClient(create_app(tmp_path), base_url="http://127.0.0.1") as client:
         state = client.post("/sessions").json()
-        assert state["settings"]["vocal_glide"] and state["settings"]["vocal_glide_amount"] == 0.5
+        glide = state["settings"]["glide"]
+        assert glide["vocal"] == {"on": True, "amount": 0.5}
+        assert glide["lead_guitar"]["on"] is False
         prefix = f"/sessions/{state['id']}"
         patched = client.patch(
-            f"{prefix}/settings", json={"vocal_glide": False, "vocal_glide_amount": 0.8}
+            f"{prefix}/settings", json={"glide": {"lead_guitar": {"on": True, "amount": 0.8}}}
         ).json()
-        desired = (patched.get("pending") or patched)["settings"]
-        assert desired["vocal_glide"] is False and desired["vocal_glide_amount"] == 0.8
-        bad = client.patch(f"{prefix}/settings", json={"vocal_glide_amount": 2})
+        desired = (patched.get("pending") or patched)["settings"]["glide"]
+        # One track changes; the others keep their own switch and strength.
+        assert desired["lead_guitar"] == {"on": True, "amount": 0.8}
+        assert desired["vocal"] == {"on": True, "amount": 0.5}
+        bad = client.patch(f"{prefix}/settings", json={"glide": {"vocal": {"amount": 2}}})
         assert bad.status_code == 422
+        unknown = client.patch(f"{prefix}/settings", json={"glide": {"drums": {"on": True}}})
+        assert unknown.status_code == 422

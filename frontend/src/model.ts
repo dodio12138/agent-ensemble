@@ -297,8 +297,33 @@ export interface Settings {
   lineup?: Lineup
   meter?: TimeSignature
   song?: Song | null
-  vocal_glide?: boolean
-  vocal_glide_amount?: number
+  glide?: Partial<Record<GlideTrack, Glide>>
+}
+
+export interface Glide {
+  on: boolean
+  amount: number
+}
+
+// Melodic tracks that can slide, tie and run between notes, with what that sounds like.
+export const GLIDES = {
+  vocal: { button: '转音', title: '人声：滑音、粘连和长音前的转音' },
+  lead_guitar: { button: '推弦', title: '主奏吉他：推弦、滑弦和击弦连奏' },
+  melody: { button: '滑音', title: '主旋律：滑音、连奏和装饰音' },
+  chip: { button: '滑音', title: '芯片琶音：方波滑音' },
+  bass: { button: '滑音', title: '贝斯：滑进音和换把滑音（不改变律动时值）' },
+  strings: { button: '滑音', title: '弦乐：单音线条的换把滑音和连弓，和弦不受影响' },
+  brass: { button: '滑音', title: '铜管：唇滑和起音上滑' },
+} as const
+export type GlideTrack = keyof typeof GLIDES
+export const DEFAULT_GLIDE: Record<GlideTrack, Glide> = {
+  vocal: { on: true, amount: 0.5 },
+  lead_guitar: { on: false, amount: 0.5 },
+  melody: { on: false, amount: 0.5 },
+  chip: { on: false, amount: 0.5 },
+  bass: { on: false, amount: 0.5 },
+  strings: { on: false, amount: 0.5 },
+  brass: { on: false, amount: 0.5 },
 }
 
 export interface TrackSettings {

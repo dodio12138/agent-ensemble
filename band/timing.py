@@ -724,6 +724,22 @@ class Scheduler:
             tracks = dict(desired.tracks)
             program_overrides = desired.program_overrides
             if track_id is None:
+                if isinstance(patch.get("glide"), dict):
+                    # Merge per-track glide changes so other tracks keep their setting.
+                    current = settings.glide.model_dump()
+                    patch = {
+                        **patch,
+                        "glide": {
+                            **current,
+                            **{
+                                track: {
+                                    **current.get(track, {}),
+                                    **{k: v for k, v in change.items() if v is not None},
+                                }
+                                for track, change in patch["glide"].items()
+                            },
+                        },
+                    }
                 settings = MusicSettings.model_validate({**settings.model_dump(), **patch})
                 if settings.lineup != desired.settings.lineup:
                     for key in LINEUP_PROGRAM_TRACKS - program_overrides:

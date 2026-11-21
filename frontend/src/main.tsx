@@ -7,8 +7,8 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import {
-  GENRE_NAMES, GROOVE_NAMES, LINEUPS, LINEUP_NAMES, LINEUP_SUBTITLES, METERS, SECTION_NAMES, TICKS_PER_QUARTER, TRACK_INFO,
-  activeMeter, pitchName, songPosition, trackLabel, tracksFor, type GrooveTransition, type Lineup, type SoundNote,
+  DEFAULT_GLIDE, GENRE_NAMES, GLIDES, GROOVE_NAMES, LINEUPS, LINEUP_NAMES, LINEUP_SUBTITLES, METERS, SECTION_NAMES, TICKS_PER_QUARTER, TRACK_INFO,
+  activeMeter, pitchName, songPosition, trackLabel, tracksFor, type GlideTrack, type GrooveTransition, type Lineup, type SoundNote,
   type State, type TimeSignature, type TrackId,
 } from './model'
 import { AudioRoute } from './AudioRoute'
@@ -548,17 +548,22 @@ function App() {
                     </select>
                     {hasSoundOptions && <ChevronsUpDown size={12} />}
                   </div>
-                  {track === 'vocal' && (
-                    <div className="glide" title="音与音之间的滑音、粘连和转音">
-                      <button type="button" aria-pressed={settings?.vocal_glide ?? true} disabled={busy}
-                        onClick={() => session.updateSettings({ vocal_glide: !(settings?.vocal_glide ?? true) })}>
-                        转音
-                      </button>
-                      <Range label="转音强度" value={settings?.vocal_glide_amount ?? 0.5}
-                        disabled={busy || !(settings?.vocal_glide ?? true)}
-                        onCommit={amount => session.updateSettings({ vocal_glide_amount: amount })} />
-                    </div>
-                  )}
+                  {track in GLIDES && (() => {
+                    const glideTrack = track as GlideTrack
+                    const glide = settings?.glide?.[glideTrack] ?? DEFAULT_GLIDE[glideTrack]
+                    return (
+                      <div className="glide" title={GLIDES[glideTrack].title}>
+                        <button type="button" aria-pressed={glide.on} disabled={busy}
+                          aria-label={`${name}${GLIDES[glideTrack].button}`}
+                          onClick={() => session.updateSettings({ glide: { [glideTrack]: { on: !glide.on } } })}>
+                          {GLIDES[glideTrack].button}
+                        </button>
+                        <Range label={`${name}${GLIDES[glideTrack].button}强度`} value={glide.amount}
+                          disabled={busy || !glide.on}
+                          onCommit={amount => session.updateSettings({ glide: { [glideTrack]: { amount } } })} />
+                      </div>
+                    )
+                  })()}
                   <div className="channel-footer">
                     <span className={fallback ? 'fallback' : remote ? 'remote' : ''} title={status}><i />{status}</span>
                     <div className={`signal ${trackActive.has(track) ? 'live' : ''}`} aria-hidden="true">{Array.from({ length: 6 }, (_, index) => <i key={index} />)}</div>

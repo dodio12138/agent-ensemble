@@ -399,6 +399,23 @@ def section_volume(section: SongSection, track: TrackId, volume: float) -> float
     return volume
 
 
+class Glide(FrozenModel):
+    on: bool = False
+    amount: float = Field(default=0.5, ge=0, le=1)
+
+
+class Glides(FrozenModel):
+    """How each melodic track joins its notes; only the voice slides by default."""
+
+    vocal: Glide = Glide(on=True)
+    lead_guitar: Glide = Glide()
+    melody: Glide = Glide()
+    chip: Glide = Glide()
+    bass: Glide = Glide()
+    strings: Glide = Glide()
+    brass: Glide = Glide()
+
+
 class MusicSettings(FrozenModel):
     bpm: int = Field(default=120, ge=40, le=240)
     density: float = Field(default=0.55, ge=0, le=1)
@@ -414,9 +431,8 @@ class MusicSettings(FrozenModel):
     lineup: Lineup = "trio"
     meter: TimeSignature = "4/4"
     song: SongPlan | None = Field(default=None, exclude_if=lambda song: song is None)
-    # Sung slides and runs between notes (转音), and how strongly the voice uses them.
-    vocal_glide: bool = True
-    vocal_glide_amount: float = Field(default=0.5, ge=0, le=1)
+    # Slides, ties and runs between notes (转音 / 粘连), per melodic track.
+    glide: Glides = Glides()
 
     @property
     def meter_parts(self) -> tuple[int, int]:
