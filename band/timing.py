@@ -443,6 +443,12 @@ class Scheduler:
             None,
         )
 
+    def improvisation_offset(self, bar: int) -> int | None:
+        """How many bars into its improvised chorus this bar falls, if any."""
+        with self._condition:
+            chorus = self._improvisation_for(bar)
+            return None if chorus is None else bar - chorus.start_bar
+
     def arrangement_for(
         self,
         bar: int,

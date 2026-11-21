@@ -13,7 +13,7 @@ from typing import Literal
 from uuid import uuid4
 
 from band.audio_routing import AudioRouter, AudioSource, SuperColliderSink
-from band.conductor import Conductor, style_preset
+from band.conductor import Conductor, genre_preset
 from band.improv_arrangement import apply_improvised_fill
 from band.link import LinkBridge
 from band.live_midi import LiveMidi, MidiFactory
@@ -21,9 +21,9 @@ from band.midi import export_midi
 from band.midi_input import MidiInput
 from band.music import (
     ConductorPlan,
+    Genre,
     MusicSettings,
     NegotiationEvent,
-    Style,
     TimeSignature,
     TrackId,
 )
@@ -338,7 +338,10 @@ class Session:
             if (player_version or variation) and plan.negotiation:
                 plan = plan.model_copy(update={"negotiation": tuple(map(tag, plan.negotiation))})
             if band_phrase:
-                plan = apply_improvised_fill(plan, settings, band_phrase)
+                offset = self.scheduler.improvisation_offset(bar)
+                plan = apply_improvised_fill(
+                    plan, settings, band_phrase, half=None if offset is None else offset % 2
+                )
             plan = plan.model_copy(
                 update={
                     "harmony": settings.chord_at(bar).symbol,
@@ -393,11 +396,13 @@ class Session:
                     next_chorus=proposal.timing_boundary == "next_chorus",
                 )
 
-    async def preset(self, style: Style) -> dict:
+    async def preset(self, style: Genre) -> dict:
         started = time.perf_counter()
         async with self.commands:
+            current, _ = self.scheduler.desired_configuration()
+            plan, progression = genre_preset(style, current.conductor)
             return await self._apply_conductor(
-                style_preset(style),
+                plan,
                 {
                     "source": "preset",
                     "model": None,
@@ -407,6 +412,7 @@ class Session:
                 },
                 f"preset:{style}",
                 started,
+                progression=progression,
             )
 
     async def _apply_conductor(

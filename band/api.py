@@ -21,9 +21,9 @@ from band.midi_input import MidiInput
 from band.music import (
     TRACK_DEFINITIONS,
     Collaboration,
+    Genre,
     Lineup,
     MusicSettings,
-    Style,
     TimeSignature,
     TrackId,
 )
@@ -64,7 +64,7 @@ class ConductRequest(BaseModel):
 
 
 class PresetRequest(BaseModel):
-    style: Style
+    style: Genre
 
 
 class ImprovisationRequest(BaseModel):

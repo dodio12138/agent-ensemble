@@ -7,7 +7,7 @@ import re
 import unicodedata
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
-from typing import Literal
+from typing import Literal, get_args
 
 import httpx2
 from pydantic import Field
@@ -24,6 +24,7 @@ from band.music import (
     TIME_SIGNATURES,
     ConductorPlan,
     FrozenModel,
+    Genre,
     ImprovisationPlan,
     MusicSettings,
     SongPlan,
@@ -205,6 +206,33 @@ def style_preset(style: Style) -> ConductorPlan:
         intensity=_PRESET_INTENSITIES[style],
         **_STYLE_PRESETS[style],
     )
+
+
+def genre_preset(
+    genre: Genre, current: ConductorPlan
+) -> tuple[ConductorPlan, tuple[str, ...] | None]:
+    """Apply any supported genre at once with the local rules, without the model.
+
+    The four core styles keep their hand-tuned presets. Other genres get the same
+    groove, mode and typical harmony that a recognised text instruction would.
+    """
+    if genre in get_args(Style):
+        return style_preset(genre), None  # type: ignore[arg-type]
+    intent = StyleIntent(
+        genre=genre,
+        groove=None,
+        mode=None,
+        harmony=None,
+        tonic=None,
+        reference=None,
+        curated=None,
+        preserve_harmony=False,
+        change_harmony=False,
+        rich=True,
+    )
+    plan, harmony = arrange_style(intent, current, None)
+    progression = materialize_harmony(plan.profile) if harmony != "keep" and plan.profile else None
+    return plan, progression
 
 
 def _allowed(text: str, start: int) -> bool:

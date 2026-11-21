@@ -45,7 +45,12 @@ def test_presets_apply_without_contacting_llm(tmp_path):
         assert preset["settings"]["conductor"]["bass"] == "root"
         assert preset["conductor"]["source"] == "preset"
         assert preset["conductor"]["attempts"] == 0
-        assert api.post(f"/sessions/{sid}/preset", json={"style": "reggae"}).status_code == 422
+        reggae = api.post(f"/sessions/{sid}/preset", json={"style": "reggae"}).json()
+        profile = reggae["settings"]["conductor"]["profile"]
+        assert profile["genre"] == "reggae" and profile["groove"] == "one_drop"
+        assert reggae["conductor"]["source"] == "preset"
+        assert reggae["settings"]["progression"] != preset["settings"]["progression"]
+        assert api.post(f"/sessions/{sid}/preset", json={"style": "polka"}).status_code == 422
 
 
 def test_improvised_chorus_uses_harmonic_fallback_and_returns_to_theme():

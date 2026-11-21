@@ -504,6 +504,28 @@ def _connected_piano(
     return tuple(sorted(pitches))
 
 
+ROCK_GENRES = frozenset({"rock", "hard_rock", "alternative_rock"})
+
+
+def _rock_band(context: BarContext) -> bool:
+    """A modern-lineup rock groove in 4/4, where guitars drive and keys sustain."""
+    profile = context.settings.conductor.profile
+    return (
+        profile is not None
+        and profile.genre in ROCK_GENRES
+        and profile.groove in {"straight_eighth", "half_time"}
+        and context.settings.meter == "4/4"
+        and context.settings.lineup == "modern"
+    )
+
+
+def _rock_opened(context: BarContext) -> bool:
+    """The chorus lift: guitars ring out and the drummer moves to the ride."""
+    if context.section is not None:
+        return context.section.texture == "full"
+    return context.settings.density >= 0.7 and context.bar % CHORUS_BARS >= CHORUS_BARS // 2
+
+
 def _rhythm(context: BarContext) -> Groove | Style:
     conductor = context.settings.conductor
     return conductor.profile.groove if conductor.profile else conductor.style
@@ -738,6 +760,22 @@ class DrumAgent:
                 ):
                     hits.pop((0, 42), None)
                     hits[0, 49] = 80
+                if (
+                    _rock_band(context)
+                    and context.section is None
+                    and context.bar % CHORUS_BARS == 0
+                    and context.settings.density >= 0.5
+                    and approach != "sparse"
+                ):
+                    hits.pop((0, 42), None)
+                    hits[0, 49] = 84
+                if _rock_band(context) and _rock_opened(context) and cymbal == 42:
+                    hits = {
+                        (tick, 51 if pitch == 42 else pitch): velocity + (4 if pitch == 42 else 0)
+                        for (tick, pitch), velocity in hits.items()
+                        if pitch != 46
+                    }
+                    intent = "副歌移到叮叮镲，二、四拍重军鼓"
                 at_phrase_end = (context.section_bar if context.section else context.bar) % 4 == 3
                 if at_phrase_end and context.settings.density >= 0.5 and approach != "sparse":
                     tail = (3 * PPQ + EIGHTH, 3 * PPQ + 3 * SIXTEENTH)
@@ -969,7 +1007,15 @@ class PianoAgent:
                 starts = tuple((tick, min(duration, PPQ)) for tick, duration in (space or starts))
                 player_intent = f"{register_intent}，用轻奏导音答句"
             velocity = 59 if phrase.velocity == "strong" else 54
-        if context.voice_leading:
+        if _rock_band(context) and phrase is None and context.section is None:
+            hold = PPQ * 2 - EIGHTH // 2
+            starts = ((0, hold), (2 * PPQ, hold)) if density >= 0.6 else ((0, BAR_TICKS - EIGHTH),)
+            pitches = sorted(
+                {_in_register(chord.root + tone, 60, 76, 67) for tone in chord.intervals[:3]}
+            )
+            velocity = 58
+            intent = "长音三和弦托在吉他上方，不与吉他抢节奏"
+        elif context.voice_leading:
             pitches = _connected_piano(context, guide_tones, low, high, center, open_fifth)
             intent += "，换和弦时保留邻近声部"
         else:
@@ -1081,6 +1127,8 @@ class RhythmGuitarAgent:
     def arrange(self, context: BarContext) -> AgentOutput:
         if context.settings.genre in {"cinematic", "ambient", "classical"}:
             return AgentOutput("让出中频给持续键盘与低音", ())
+        if _rock_band(context):
+            return self._rock(context)
         groove = _rhythm(context)
         chord = context.chord
         profile = context.settings.conductor.profile
@@ -1156,6 +1204,96 @@ class RhythmGuitarAgent:
             tuple(notes),
         )
 
+    def _rock(self, context: BarContext) -> AgentOutput:
+        chord = context.chord
+        root = _in_register(chord.root, 48, 59, 52)
+        voicing = (root, root + chord.intervals[2], root + 12)
+        speed = max(6, round(context.settings.bpm * PPQ * 0.004 / 60))
+        busy = context.player_phrase is not None and context.player_phrase.activity == "busy"
+        if _rock_opened(context):
+            # Ring on one, push the and-of-two, ring on three, push the and-of-four.
+            hits = ((0, 92, False), (3 * EIGHTH, 82, False), (4 * EIGHTH, 90, False))
+            hits += ((7 * EIGHTH, 80, False),)
+            intent = "副歌放开强力和弦：一拍、二拍后半、三拍、四拍后半"
+        else:
+            # Palm-muted eighths with the downbeats of one and three left open.
+            hits = tuple(
+                (index * EIGHTH, 90 if index % 4 == 0 else 72, index % 4 != 0) for index in range(8)
+            )
+            if context.settings.density < 0.45:
+                hits = hits[::2]
+            intent = "八分闷音强力和弦推进，一、三拍放开重音"
+        if busy:
+            hits = hits[::2]
+            intent = "让出旋律，强力和弦只留重拍"
+        rng = context.random_for("rhythm_guitar")
+        notes = []
+        for index, (tick, force, muted) in enumerate(hits):
+            next_tick = hits[index + 1][0] if index + 1 < len(hits) else BAR_TICKS
+            length = SIXTEENTH if muted else next_tick - tick - 30
+            # Chugs are all downstrokes; an open push off the beat is an upstroke.
+            upstroke = not muted and tick % PPQ != 0
+            for string, pitch in enumerate(sorted(voicing, reverse=upstroke)):
+                onset = tick + string * speed
+                notes.append(
+                    _note(
+                        "rhythm_guitar",
+                        context,
+                        onset,
+                        max(30, min(length, next_tick - onset - 10)),
+                        pitch,
+                        force - string * 3 + rng.randint(-3, 3),
+                        articulation="palm_mute" if muted else "normal",
+                    )
+                )
+        return AgentOutput(intent, tuple(notes))
+
+
+_PENTATONIC = (0, 3, 5, 7, 10)
+# Rock licks as steps along the minor pentatonic, from where the lick starts.
+_ROCK_LICKS = (
+    (4, 3, 2, 1, 0, 0),
+    (0, 1, 2, 1, 0, -1),
+    (2, 3, 4, 5, 4, 2),
+    (-1, 0, 1, 2, 3, 2),
+)
+
+
+def _rock_lick(context: BarContext) -> tuple[str, tuple[Note, ...]] | None:
+    """A pentatonic fill over the last two beats of each four-bar phrase."""
+    if context.bar % 4 != 3 or context.settings.density < 0.35:
+        return None
+    # The key comes from the chords being played, which may differ from the style default.
+    tonic = parse_chord(context.settings.progression[0]).root
+    rng = context.random_for("lead_guitar")
+    shape = _ROCK_LICKS[rng.randrange(len(_ROCK_LICKS))]
+    scale = [pitch for pitch in range(60, 89) if (pitch - tonic) % 12 in _PENTATONIC]
+    home = min(range(len(scale)), key=lambda index: abs(scale[index] - 72))
+    climax = context.bar % CHORUS_BARS == CHORUS_BARS - 1
+    notes = []
+    for index, step in enumerate(shape):
+        position = max(0, min(len(scale) - 1, home + step + (2 if climax else 0)))
+        last = index == len(shape) - 1
+        # Five sixteenths from beat three, then a held note on the and-of-four.
+        tick = 2 * PPQ + (index + (1 if last else 0)) * SIXTEENTH
+        duration = (BAR_TICKS - tick - 20) if last else SIXTEENTH - 10
+        notes.append(
+            _note(
+                "lead_guitar",
+                context,
+                tick,
+                duration,
+                scale[position],
+                (84 if last else 74) + (6 if climax else 0),
+                articulation="harmonic"
+                if last and climax
+                else "legato"
+                if 0 < index and not last
+                else "normal",
+            )
+        )
+    return "句尾用小调五声音阶加花，长音收在下一句前", tuple(notes)
+
 
 class LeadGuitarAgent:
     async def generate(self, context: BarContext) -> AgentOutput:
@@ -1196,6 +1334,11 @@ class LeadGuitarAgent:
                 tuple(articulate),
             )
         settings = context.settings
+        if _rock_band(context) and phrase is None:
+            lick = _rock_lick(context)
+            if lick is None:
+                return AgentOutput("等句尾再加花，前面留给节奏吉他", ())
+            return AgentOutput(lick[0], lick[1])
         meter = settings.meter
         offbeat = _offbeat(_rhythm(context))
         if phrase is not None:

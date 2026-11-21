@@ -1,10 +1,23 @@
 import { useRef, useState } from 'react'
 import { FileMusic, Send } from 'lucide-react'
 import {
-  CORE_TRACK_IDS, GENRE_NAMES, GROOVE_NAMES, SECTION_NAMES, STYLE_NAMES, TRACK_INFO,
-  type ConductorPlan, type HarmonicMove, type ImprovisedChorus, type ImprovisationPhrase,
-  type MusicProfile, type Song, type State, type Style,
+  CORE_TRACK_IDS, GENRE_NAMES, GROOVE_NAMES, SECTION_NAMES, TRACK_INFO,
+  type ConductorPlan, type Genre, type HarmonicMove, type ImprovisedChorus, type ImprovisationPhrase,
+  type MusicProfile, type Song, type State,
 } from './model'
+
+// Every style the band can play, grouped by family. Each applies at once with local rules.
+const STYLE_GROUPS: { label: string; styles: Genre[] }[] = [
+  { label: '爵士 · 拉丁', styles: ['swing', 'bossa', 'latin'] },
+  { label: '律动', styles: ['funk', 'disco', 'soul', 'hip_hop', 'reggae'] },
+  { label: '摇滚 · 布鲁斯', styles: ['rock', 'hard_rock', 'alternative_rock', 'blues', 'country'] },
+  { label: '流行 · 抒情', styles: ['pop', 'ballad'] },
+  { label: '配乐 · 电子', styles: ['cinematic', 'ambient', 'electronic', 'classical'] },
+]
+
+function genreOf(plan?: ConductorPlan | null): Genre | null {
+  return plan ? plan.profile?.genre ?? plan.style : null
+}
 
 const approaches = {
   drums: { balanced: '均衡节奏', sparse: '简约节奏', driving: '推进节奏' },
@@ -52,15 +65,34 @@ const harmonies: Record<MusicProfile['harmony'], string> = {
   major_145: 'I–IV–V',
 }
 
-const examples = [
-  { label: '摇滚', instruction: '摇滚' },
-  { label: '披头士', instruction: '参考披头士的风格' },
-  { label: '雷鬼', instruction: '雷鬼' },
-  { label: '星际穿越曲风', instruction: '星际穿越曲风' },
-  { label: '变拍与速度', instruction: '换成 6/8 拍，速度 108 BPM' },
-]
+type Mode = 'adjust' | 'improvise' | 'compose'
 
-const songExample = '写一首无歌词的流行摇滚器乐曲。短引子，A 段克制，B 段换成 6/8 拍，尾声回 4/4。'
+const MODES: Record<Mode, { label: string; placeholder: string; submit: string; busy: string }> = {
+  adjust: { label: '调整编排', placeholder: '风格、和声、速度、拍号或强度', submit: '提交', busy: '编排中…' },
+  improvise: { label: '即兴一轮', placeholder: '可留空，或写下这轮即兴的想法', submit: '开始即兴', busy: '安排中…' },
+  compose: { label: '编排整首', placeholder: '描述整首曲子的段落、拍号与速度', submit: '编排整首', busy: '编排中…' },
+}
+
+const EXAMPLES: Record<Mode, { label: string; instruction: string }[]> = {
+  adjust: [
+    { label: '变拍与速度', instruction: '换成 6/8 拍，速度 108 BPM' },
+    { label: '强度', instruction: '强度 80%' },
+    { label: '乐队参考', instruction: '参考披头士的风格' },
+    { label: '中国摇滚', instruction: '像唐朝乐队那样的硬摇滚' },
+    { label: '影视配乐', instruction: '星际穿越曲风' },
+  ],
+  improvise: [
+    { label: '贝斯先答', instruction: '贝斯先答一句，留出空间，再回主题' },
+    { label: '反套路', instruction: '来一点反套路的即兴' },
+    { label: '副属和弦', instruction: '试一下副属和弦' },
+    { label: '保留原和弦', instruction: '保留原和弦' },
+  ],
+  compose: [
+    { label: '器乐曲示例', instruction: '写一首无歌词的流行摇滚器乐曲。短引子，A 段克制，B 段换成 6/8 拍，尾声回 4/4。' },
+    { label: '变拍副歌', instruction: 'E 大调流行摇滚器乐，主歌 4/4，副歌转成 6/8 和 132 BPM，尾声回 4/4，突出旋律' },
+  ],
+}
+
 const motifNames = { rise: '上行', fall: '下行', arch: '拱形', repeat: '重复' } as const
 const textureNames = { sparse: '留白', full: '全乐队', answer: '问答' } as const
 const keysToneNames = { piano: '钢琴', electric: '电钢琴', vibes: '颤音琴', organ: '管风琴' } as const
@@ -76,44 +108,23 @@ function sameProfile(left: MusicProfile | null | undefined, right: MusicProfile 
     && left.reference === right.reference
 }
 
-function DirectionPreview({ plan, progression, startBar, currentBar }: {
-  plan: ConductorPlan
-  progression: string[]
-  startBar?: number
-  currentBar?: number
-}) {
-  const { profile } = plan
-  const status = startBar === undefined ? '当前编排' : `第 ${startBar + 1} 小节生效`
-  const reference = profile?.reference
-  return (
-    <article className={startBar === undefined ? 'direction-preview' : 'direction-preview queued'} aria-label={`${status}风格与和声`}>
-      <header>
-        <span>{status}</span>
-        <strong>{directionName(plan)}</strong>
-        {profile?.basis === 'reference' && reference && <span>{profile.genre === 'cinematic' ? '配乐参考' : '乐队参考'} {reference}</span>}
-        {profile?.basis === 'inferred' && <span>风格推断{reference && ` · ${reference}`}</span>}
-      </header>
-      {profile && (
-        <dl className="direction-traits">
-          <div><dt>拍感</dt><dd>{GROOVE_NAMES[profile.groove]}</dd></div>
-          {profile.harmony !== 'keep' && (
-            <div><dt>调性</dt><dd>{profile.tonic.replace('#', '♯').replace('b', '♭')} {modes[profile.mode]}</dd></div>
-          )}
-          <div><dt>和声倾向</dt><dd>{harmonies[profile.harmony]}</dd></div>
-        </dl>
-      )}
-      <ol className="chorus-chords" aria-label="主题和弦">
-        {progression.map((chord, index) => (
-          <li key={index} aria-current={currentBar === index ? 'step' : undefined}>
-            <span>{index + 1}</span><strong>{chord}</strong>
-          </li>
-        ))}
-      </ol>
-    </article>
-  )
+function traits(plan: ConductorPlan) {
+  const profile = plan.profile
+  if (!profile) return ''
+  return [
+    GROOVE_NAMES[profile.groove],
+    profile.harmony !== 'keep' ? `${profile.tonic.replace('#', '♯').replace('b', '♭')} ${modes[profile.mode]}` : '',
+    harmonies[profile.harmony],
+    profile.basis === 'reference' && profile.reference ? `参考 ${profile.reference}` : '',
+  ].filter(Boolean).join(' · ')
 }
 
-function ChorusPreview({ chorus, currentBar, transport }: { chorus: ImprovisedChorus; currentBar?: number; transport?: State['transport'] }) {
+function ChorusPreview({ chorus, currentBar, transport, lineup }: {
+  chorus: ImprovisedChorus
+  currentBar?: number
+  transport?: State['transport']
+  lineup?: string
+}) {
   const { plan, start_bar: start, end_bar: end } = chorus
   const length = plan.progression.length
   const playedBars = end - start
@@ -166,7 +177,11 @@ function ChorusPreview({ chorus, currentBar, transport }: { chorus: ImprovisedCh
           return (
             <li key={index} className={current ? 'current' : undefined} aria-current={current ? 'step' : undefined}>
               <span>{phraseEnd === phraseBar + 1 ? phraseEnd : `${phraseBar + 1}–${phraseEnd}`}</span>
-              <strong style={{ color: TRACK_INFO[phrase.lead].color }}>{TRACK_INFO[phrase.lead].name}领奏</strong>
+              {(() => {
+                // In the modern band the lead guitar takes the melodic solos.
+                const soloist = phrase.lead === 'piano' && lineup === 'modern' ? 'lead_guitar' : phrase.lead
+                return <strong style={{ color: TRACK_INFO[soloist].color }}>{TRACK_INFO[soloist].name}领奏</strong>
+              })()}
               <span>{characters[phrase.character]}</span>
             </li>
           )
@@ -239,7 +254,7 @@ export function ConductorPanel({ state, disabled, conducting, improvising, compo
   composing: boolean
   error: string
   onConduct: (instruction: string) => void
-  onPreset: (style: Style) => void
+  onPreset: (style: Genre) => void
   onImprovise: (instruction: string) => void
   onAuto: (auto: boolean) => void
   onCompose: (instruction: string) => void
@@ -277,171 +292,175 @@ export function ConductorPanel({ state, disabled, conducting, improvising, compo
   const song = newSong?.settings.song ?? state?.settings.song
   const songStart = newSong?.bar ?? state?.song_origin ?? composition?.start_bar
   const leaving = song && next && !next.settings.song ? next.bar : null
-  const pendingPreset = next?.settings.conductor && !next.settings.conductor.profile ? next.settings.conductor.style : null
-  const activePreset = active && !active.profile ? active.style : null
-  const currentChord = state && state.transport !== 'stopped' && !improvisation?.active
-    ? state.bar % currentProgression.length : undefined
+  const activeGenre = genreOf(active)
+  const pendingGenre = genreOf(next?.settings.conductor)
+
+  const [mode, setMode] = useState<Mode>('adjust')
+  const queuedTiming = next && state && [
+    next.settings.bpm !== state.settings.bpm ? `${next.settings.bpm} BPM` : '',
+    next.settings.meter && next.settings.meter !== state.settings.meter ? `${next.settings.meter} 拍` : '',
+  ].filter(Boolean).join(' · ')
+  const queuedStyle = upcoming && active && genreOf(upcoming) !== genreOf(active) ? directionName(upcoming) : ''
+  const queued = staged || (next && queuedTiming) ? [
+    queuedStyle, queuedTiming, staged && !queuedStyle ? '换和声' : '',
+  ].filter(Boolean).join(' · ') : ''
+  const queuedBar = (staged ?? next)?.bar
+  const playingMode = improvisation?.active ? '即兴中'
+    : song ? `整首歌${state?.section ? ` · ${SECTION_NAMES[state.section.role]}` : ''}` : '八小节循环'
+  const busyText = conducting ? '正在生成编排，乐队照常演奏。'
+    : composingSong ? '正在安排段落，乐队照常演奏。'
+    : planning ? '正在安排下一轮即兴…' : ''
+  const failure = error || composition?.error
+    || (improvisation?.last_error ? reasons[improvisation.last_error] || improvisation.last_error : '')
+  const canSubmit = !disabled && !requestInFlight && (mode === 'improvise' || !!instruction.trim())
+  const modeInfo = MODES[mode]
+
+  function submit() {
+    if (!canSubmit) return
+    const text = instruction.trim()
+    if (mode === 'adjust') onConduct(text)
+    else if (mode === 'improvise') onImprovise(text)
+    else onCompose(text)
+  }
 
   return (
     <section className="panel conductor" aria-label="指挥">
       <header className="panel-heading">
         <h2><FileMusic aria-hidden="true" size={17} />指挥</h2>
-        {active && (
-          <div className="conductor-current">
-            <strong>{directionName(active)}</strong>
-            <span>强度 <b>{active.intensity}%</b></span>
-          </div>
-        )}
+        <span className="conductor-mode-badge">{playingMode}{improvisation?.auto ? ' · 自动即兴' : ''}</span>
       </header>
       <div className="conductor-body">
-        {improvisation && (
-          <div className="style-presets" role="group" aria-label="风格预设">
-            {(Object.keys(STYLE_NAMES) as Style[]).map(style => {
-              const queued = pendingPreset === style && activePreset !== style
-              return (
-                <button key={style} type="button" className={queued ? 'queued' : undefined}
-                  aria-pressed={activePreset === style} disabled={disabled || composingSong} onClick={() => onPreset(style)}>
-                  {STYLE_NAMES[style]}{queued && <small>待生效</small>}
-                </button>
-              )
-            })}
-          </div>
-        )}
-        <form className="conductor-form" onSubmit={event => {
-          event.preventDefault()
-          if (!disabled && !requestInFlight && instruction.trim()) onConduct(instruction.trim())
-        }}>
-          <input
-            ref={input}
-            aria-label="指挥指令"
-            placeholder="输入风格、和声、速度或拍号"
-            type="text"
-            spellCheck={false}
-            maxLength={500}
-            value={instruction}
-            onChange={event => setInstruction(event.target.value)}
-            onKeyDown={event => {
-              if (event.key === 'Enter' && event.nativeEvent.isComposing) event.preventDefault()
-            }}
-            disabled={disabled || requestInFlight}
-          />
-          <button type="submit" disabled={disabled || requestInFlight || !instruction.trim()}>
-            {!conducting && <Send size={15} aria-hidden="true" />}
-            {conducting ? '编排中…' : '提交指令'}
-          </button>
-        </form>
-        <div className="conductor-examples" role="group" aria-label="指挥指令示例">
-          <span>试试</span>
-          {examples.map(example => (
-            <button key={example.label} type="button" disabled={disabled || requestInFlight}
-              onClick={() => {
-                setInstruction(example.instruction)
-                input.current?.focus()
-              }}>
-              {example.label}
-            </button>
-          ))}
-          {composition && (
-            <button type="button" disabled={disabled || requestInFlight} onClick={() => {
-              setInstruction(songExample)
-              input.current?.focus()
-            }}>
-              器乐曲示例
-            </button>
-          )}
-        </div>
-        <div className={`conductor-result ${error ? 'error' : ''}`} role="status">
-          {error || (conducting ? '正在生成编排，乐队照常演奏。' : result && (
-            <>
-              <span className={result.source === 'llm' ? 'conductor-llm' : 'conductor-rules'}
-                title={result.model ?? undefined}>{source}</span>
-              {result.status === 'scheduled' && (
-                <span>
-                  <strong>第 {bar} 小节生效</strong> · {directionName(result.plan)} · 强度 {result.plan.intensity}%
-                  {timing && ` · ${timing}`}
-                </span>
-              )}
-              {result.status === 'applied' && (
-                <span>{bar === null ? '编排已生效' : `第 ${bar} 小节已生效`}{timing && ` · ${timing}`}</span>
-              )}
-              {result.status === 'unchanged' && <span>当前编排保持不变</span>}
-              {reason && <span className="conductor-reason">{reason}</span>}
-            </>
-          ))}
-        </div>
-        {active && (active.profile || upcoming?.profile) && (
-          <div className="direction-views">
-            <DirectionPreview plan={active} progression={currentProgression} currentBar={currentChord} />
-            {staged && upcoming && (
-              <DirectionPreview plan={upcoming} progression={staged.settings.progression} startBar={staged.bar} />
+        {active && (
+          <section className="conductor-now" aria-label="当前编排">
+            <div className="now-main">
+              <strong>{directionName(active)}</strong>
+              <span>强度 <b>{active.intensity}%</b></span>
+              {traits(active) && <span className="now-traits">{traits(active)}</span>}
+            </div>
+            {queued && queuedBar != null && (
+              <p className="now-next">第 {queuedBar + 1} 小节起 → {queued}</p>
             )}
-          </div>
-        )}
-        {plan && (
-          <dl className="conductor-intents" aria-label={next?.settings.conductor === plan ? '待生效乐手意图' : '当前乐手意图'}>
-            {CORE_TRACK_IDS.map(track => (
-              <div key={track}>
-                <dt style={{ color: TRACK_INFO[track].color }}>{TRACK_INFO[track].name}</dt>
-                <dd>
-                  {track === 'drums' && approaches.drums[plan.drums]}
-                  {track === 'bass' && approaches.bass[plan.bass]}
-                  {track === 'piano' && approaches.piano[plan.piano]}
-                </dd>
-              </div>
-            ))}
-          </dl>
-        )}
-        {composition && (
-          <section className="conductor-improvisation" aria-labelledby="composition-heading">
-            <header>
-              <h3 id="composition-heading">全曲编排</h3>
-              <div className="improvisation-actions">
-                {song && (
-                  <button type="button" disabled={disabled || requestInFlight || leaving !== null}
-                    onClick={onLeaveSong}>
-                    退出歌曲
-                  </button>
-                )}
-                <button type="button" disabled={disabled || requestInFlight || !instruction.trim()}
-                  onClick={() => onCompose(instruction.trim())}>
-                  {composingSong ? '编排中…' : '编排整首'}
-                </button>
-              </div>
-            </header>
-            <p className="improvisation-state" role="status">
-              {composingSong ? '正在安排段落，乐队照常演奏。'
-                : composition.error || (leaving !== null ? `第 ${leaving + 1} 小节回到八小节循环`
-                  : !song ? '描述整首曲子，再点「编排整首」。' : '')}
+            <p className={`now-status ${failure ? 'error' : ''}`} role="status">
+              {busyText || failure || (result ? (
+                <>
+                  <span className={result.source === 'llm' ? 'conductor-llm' : 'conductor-rules'}
+                    title={result.model ?? undefined}>{source}</span>
+                  {result.status === 'scheduled' && <span>第 {bar} 小节生效{timing && ` · ${timing}`}</span>}
+                  {result.status === 'applied' && <span>{bar === null ? '已生效' : `第 ${bar} 小节已生效`}{timing && ` · ${timing}`}</span>}
+                  {result.status === 'unchanged' && <span>编排保持不变</span>}
+                  {reason && <span className="conductor-reason">{reason}</span>}
+                </>
+              ) : <span className="conductor-reason">选择风格或输入指令</span>)}
             </p>
-            {song && <SongRoadmap song={song} state={state} startBar={songStart} pending={!!newSong} />}
+            {plan && (
+              <dl className="now-band" aria-label={next?.settings.conductor === plan ? '待生效乐手分工' : '当前乐手分工'}>
+                {CORE_TRACK_IDS.map(track => (
+                  <div key={track}>
+                    <dt style={{ color: TRACK_INFO[track].color }}>{TRACK_INFO[track].name}</dt>
+                    <dd>
+                      {track === 'drums' && approaches.drums[plan.drums]}
+                      {track === 'bass' && approaches.bass[plan.bass]}
+                      {track === 'piano' && approaches.piano[plan.piano]}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            )}
           </section>
         )}
-        {improvisation && (
-          <section className="conductor-improvisation" aria-labelledby="improvisation-heading">
-            <header>
-              <h3 id="improvisation-heading">指挥即兴</h3>
-              <div className="improvisation-actions">
-                <label>
-                  <input type="checkbox" checked={improvisation.auto} disabled={disabled}
-                    onChange={event => onAuto(event.target.checked)} />
-                  自动即兴
-                </label>
-                <button type="button" disabled={disabled || requestInFlight} onClick={() => onImprovise(instruction.trim())}>
-                  来一轮即兴
-                </button>
-                <button type="button" disabled={disabled || requestInFlight} onClick={() => onImprovise('来一点反套路的即兴')}>
-                  反套路即兴
-                </button>
+
+        <div className="style-groups" role="group" aria-label="风格">
+          {STYLE_GROUPS.map(group => (
+            <div className="style-group" key={group.label}>
+              <span>{group.label}</span>
+              <div>
+                {group.styles.map(style => {
+                  const isQueued = pendingGenre === style && activeGenre !== style
+                  return (
+                    <button key={style} type="button" className={isQueued ? 'queued' : undefined}
+                      aria-pressed={activeGenre === style} title={isQueued ? '待生效' : undefined}
+                      disabled={disabled || composingSong} onClick={() => onPreset(style)}>
+                      {GENRE_NAMES[style]}
+                    </button>
+                  )
+                })}
               </div>
-            </header>
-            <p className="improvisation-state" role="status">
-              {planning ? '正在安排下一轮即兴…' : improvisation.last_error && (reasons[improvisation.last_error] || improvisation.last_error)}
-            </p>
-            {improvisation.active && (
-              <ChorusPreview chorus={improvisation.active} currentBar={state?.transport === 'stopped' ? undefined : state?.bar}
-                transport={state?.transport} />
+            </div>
+          ))}
+        </div>
+
+        <section className="conductor-composer" aria-label="指令">
+          <div className="composer-modes" role="tablist" aria-label="指令类型">
+            {(Object.keys(MODES) as Mode[])
+              .filter(key => key !== 'compose' || composition)
+              .filter(key => key !== 'improvise' || improvisation)
+              .map(key => (
+                <button key={key} type="button" role="tab" aria-selected={mode === key}
+                  onClick={() => setMode(key)}>
+                  {MODES[key].label}
+                </button>
+              ))}
+          </div>
+          <form className="conductor-form" onSubmit={event => {
+            event.preventDefault()
+            submit()
+          }}>
+            <input
+              ref={input}
+              aria-label={`${modeInfo.label}指令`}
+              placeholder={modeInfo.placeholder}
+              type="text"
+              spellCheck={false}
+              maxLength={500}
+              value={instruction}
+              onChange={event => setInstruction(event.target.value)}
+              onKeyDown={event => {
+                if (event.key === 'Enter' && event.nativeEvent.isComposing) event.preventDefault()
+              }}
+              disabled={disabled || requestInFlight}
+            />
+            <button type="submit" disabled={!canSubmit}>
+              {!requestInFlight && <Send size={15} aria-hidden="true" />}
+              {requestInFlight ? modeInfo.busy : modeInfo.submit}
+            </button>
+          </form>
+          <div className="conductor-examples" role="group" aria-label="示例">
+            {EXAMPLES[mode].map(example => (
+              <button key={example.label} type="button" disabled={disabled || requestInFlight}
+                onClick={() => {
+                  setInstruction(example.instruction)
+                  input.current?.focus()
+                }}>
+                {example.label}
+              </button>
+            ))}
+            {mode === 'improvise' && improvisation && (
+              <label className="composer-toggle">
+                <input type="checkbox" checked={improvisation.auto} disabled={disabled}
+                  onChange={event => onAuto(event.target.checked)} />
+                自动即兴
+              </label>
             )}
-            {improvisation.pending && <ChorusPreview chorus={improvisation.pending} />}
+          </div>
+        </section>
+
+        {(improvisation?.active || improvisation?.pending || song) && (
+          <section className="conductor-timeline" aria-label="演奏安排">
+            {improvisation?.active && (
+              <ChorusPreview chorus={improvisation.active} currentBar={state?.transport === 'stopped' ? undefined : state?.bar}
+                transport={state?.transport} lineup={state?.settings.lineup} />
+            )}
+            {improvisation?.pending && <ChorusPreview chorus={improvisation.pending} lineup={state?.settings.lineup} />}
+            {song && state && (
+              <>
+                <SongRoadmap song={song} state={state} startBar={songStart} pending={!!newSong} />
+                <div className="timeline-actions">
+                  {leaving !== null
+                    ? <span>第 {leaving + 1} 小节回到八小节循环</span>
+                    : <button type="button" disabled={disabled || requestInFlight} onClick={onLeaveSong}>退出歌曲</button>}
+                </div>
+              </>
+            )}
           </section>
         )}
       </div>

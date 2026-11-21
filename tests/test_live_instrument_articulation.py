@@ -18,14 +18,20 @@ def test_rock_guitar_strums_in_real_string_order_and_keeps_distinct_articulation
         assert validate_notes(bar.bar, bar.notes) == bar.notes
     rhythm = [note for note in first.notes if note.track_id == "rhythm_guitar"]
     assert len(rhythm) >= 9 and len({note.start_tick for note in rhythm}) == len(rhythm)
-    assert [note.pitch for note in rhythm[:3]] == sorted(note.pitch for note in rhythm[:3])
-    assert [note.pitch for note in rhythm[3:6]] == sorted(
-        (note.pitch for note in rhythm[3:6]), reverse=True
-    )
+    # The verse chugs: eight palm-muted downstrokes, low string first, with open accents.
+    for strum in (rhythm[:3], rhythm[3:6]):
+        assert [note.pitch for note in strum] == sorted(note.pitch for note in strum)
     assert any(note.articulation == "palm_mute" for note in rhythm)
-    lead = [note for note in answer.notes if note.track_id == "lead_guitar"]
-    assert lead[1].articulation == "legato"
-    assert lead[0].start_tick + lead[0].duration_ticks > lead[1].start_tick
+    assert rhythm[0].articulation == "normal"
+    # The lift rings out, and its offbeat pushes are upstrokes, high string first.
+    lift = [note for note in ending.notes if note.track_id == "rhythm_guitar"]
+    push = [note for note in lift if 3 * PPQ // 2 <= note.start_tick < 2 * PPQ]
+    assert not any(note.articulation == "palm_mute" for note in lift)
+    assert [note.pitch for note in push] == sorted((note.pitch for note in push), reverse=True)
+    assert not any(note.track_id == "lead_guitar" for note in answer.notes)
+    lick = [note for note in fill.notes if note.track_id == "lead_guitar"]
+    assert len(lick) >= 5 and any(note.articulation == "legato" for note in lick)
+    assert lick[-1].start_tick + lick[-1].duration_ticks <= 4 * PPQ
     assert any(note.articulation == "harmonic" for note in ending.notes)
     assert any(
         note.track_id == "drums" and note.pitch == 45 and note.start_tick >= 3 * PPQ

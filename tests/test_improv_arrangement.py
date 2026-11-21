@@ -3,6 +3,7 @@ import asyncio
 from band.improv_arrangement import apply_improvised_fill, phrase_for_bar, project_improvisation
 from band.music import (
     CHORUS_BARS,
+    PPQ,
     TRACKS,
     ConductorPlan,
     ImprovisationPhrase,
@@ -64,13 +65,17 @@ def test_lead_fills_sound_within_valid_score_and_respect_busy_player():
                 assert validate_notes(bar, reply.notes) == reply.notes
                 assert {note.track_id for note in reply.notes} == TRACKS.keys()
                 chord = projected.chord_at(bar)
-                allowed = {(chord.root + degree) % 12 for degree in chord.intervals}
+                # Solos may pass through any note, but what lands on a beat or is held
+                # must be a chord tone or a 9th / 13th colour.
+                allowed = {(chord.root + degree) % 12 for degree in (*chord.intervals, 2, 9)}
                 for note in reply.notes:
                     if note.event_id.startswith("improv-"):
                         reply_count += 1
                         assert note.track_id == phrase.lead
-                        if note.track_id != "drums":
-                            assert note.pitch % 12 in allowed
+                        on_beat = note.start_tick % PPQ == 0
+                        held = note.duration_ticks >= PPQ // 2
+                        if note.track_id != "drums" and (on_beat or held):
+                            assert note.pitch % 12 in allowed, (style, bar, note)
                 busy = await planner.plan(
                     bar,
                     projected,

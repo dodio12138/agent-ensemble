@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { TRACK_IDS } from './model'
-import type { AudioOutput, BandEvent, Frame, LinkPatch, MidiPatch, Settings, SoundNote, State, Style, TrackId, TrackSettings } from './model'
+import type { AudioOutput, BandEvent, Frame, LinkPatch, MidiPatch, Settings, SoundNote, State, Genre, TrackId, TrackSettings } from './model'
 import { StudioSynth } from './synth'
 
 type Connection = 'starting' | 'online' | 'retrying' | 'failed'
@@ -305,7 +305,7 @@ export function useSession() {
     send(() => ({ path: 'composition', method: 'DELETE' }))
   }
 
-  function setPreset(style: Style) {
+  function setPreset(style: Genre) {
     setConductError('')
     send(() => ({ path: 'preset', method: 'POST', values: { style } }))
   }
